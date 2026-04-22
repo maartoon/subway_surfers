@@ -230,13 +230,13 @@ always_comb begin
     sheep_j1_addr = (sheepj1_inrange) ? ((local_y_sheepj1 * SHEEPJ1_W) + local_x_sheepj1) : 11'd0;
 end
 
-// Transparency key: #FF00B7 => 4'hF,4'h0,4'hB.
-assign moon_valid = moon_inrange_d && !((moon_r == 4'hF) && (moon_g == 4'h0) && (moon_b == 4'hB));
-assign fence_valid = fence_inrange_d && !((fence_r == 4'hF) && (fence_g == 4'h0) && (fence_b == 4'hB));
-assign clover_valid = clover_inrange_d && !((clover_r == 4'hF) && (clover_g == 4'h0) && (clover_b == 4'hB));
-assign sheep1_valid = sheep1_inrange_d && !((sheep1_r == 4'hF) && (sheep1_g == 4'h0) && (sheep1_b == 4'hB));
-assign sheep2_valid = sheep2_inrange_d && !((sheep2_r == 4'hF) && (sheep2_g == 4'h0) && (sheep2_b == 4'hB));
-assign sheepj1_valid = sheepj1_inrange_d && !((sheepj1_r == 4'hF) && (sheepj1_g == 4'h0) && (sheepj1_b == 4'hB));
+// Transparency key: index 0 is reserved for the background in all palettes.
+assign moon_valid = moon_inrange_d && (moon_idx != 0);
+assign fence_valid = fence_inrange_d && (fence_idx != 0);
+assign clover_valid = clover_inrange_d && (clover_idx != 0);
+assign sheep1_valid = sheep1_inrange_d && (sheep1_idx != 0);
+assign sheep2_valid = sheep2_inrange_d && (sheep2_idx != 0);
+assign sheepj1_valid = sheepj1_inrange_d && (sheep_j1_idx != 0);
 
 //Real Digital VGA to HDMI converter
 hdmi_tx_0 vga_to_hdmi (

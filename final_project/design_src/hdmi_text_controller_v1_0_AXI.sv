@@ -43,6 +43,7 @@ module hdmi_text_controller_v1_0_AXI #
     input logic vsync,
     input logic [C_S_AXI_DATA_WIDTH-1:0] DrawX,
     input logic [C_S_AXI_DATA_WIDTH-1:0] DrawY,
+    output logic [C_S_AXI_DATA_WIDTH-1:0] frame_count,
 
     // Register data output signals
     input logic [C_S_AXI_DATA_WIDTH-1:0] bram_out, // data coming out of bram
@@ -491,6 +492,7 @@ end
 // Frame Counter logic
 logic prev_vsync;
 logic [C_S_AXI_DATA_WIDTH-1:0] frame_counter;
+assign frame_count = frame_counter;
 
 always_ff @( posedge S_AXI_ACLK ) begin
   // Reset frame counter and prev_vsync

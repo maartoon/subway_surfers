@@ -17,9 +17,22 @@
 module  color_mapper ( 
     input logic [9:0] DrawX, DrawY,
     input logic vde,
+    input logic [31:0] frame_count,
 
     input logic [31:0] char_data, // register containing 2 characters 
     input logic [31:0] color_regs [8],
+    input logic moon_valid,
+    input logic [3:0] moon_r, moon_g, moon_b,
+    input logic fence_valid,
+    input logic [3:0] fence_r, fence_g, fence_b,
+    input logic clover_valid,
+    input logic [3:0] clover_r, clover_g, clover_b,
+    input logic sheep1_valid,
+    input logic [3:0] sheep1_r, sheep1_g, sheep1_b,
+    input logic sheep2_valid,
+    input logic [3:0] sheep2_r, sheep2_g, sheep2_b,
+    input logic sheepj1_valid,
+    input logic [3:0] sheepj1_r, sheepj1_g, sheepj1_b,
     
 //    output logic [10:0] color_addr, // which register to read 
     output logic [3:0]  Red, Green, Blue);
@@ -108,17 +121,122 @@ module  color_mapper (
     logic is_foreground;
     assign is_foreground = font_bit ^ iv;
 
+    // Procedural environment for Step 1:
+    // top half = starry sky, bottom half = scrolling grass/lane field.
+    logic [3:0] env_r, env_g, env_b;
+    logic [9:0] drawy_scrolled;
+    logic sky_star_on;
+    logic lane_mark_on;
+    logic [9:0] x_dist_center;
+    logic [9:0] x_dist_left;
+    logic [9:0] x_dist_right;
+    logic stripe_bit;
+
+    assign drawy_scrolled = DrawY + {2'b00, frame_count[7:0]};
+    assign sky_star_on = ((DrawX[7:0] ^ DrawY[7:0] ^ frame_count[8:1]) == 8'h5A)
+                      || ((DrawX[7:0] + DrawY[7:0] + frame_count[9:2]) == 8'hD3);
+
+    assign x_dist_center = (DrawX >= 10'd320) ? (DrawX - 10'd320) : (10'd320 - DrawX);
+    assign x_dist_left   = (DrawX >= 10'd213) ? (DrawX - 10'd213) : (10'd213 - DrawX);
+    assign x_dist_right  = (DrawX >= 10'd426) ? (DrawX - 10'd426) : (10'd426 - DrawX);
+
+    always_comb begin
+        // Thicker stripes near the bottom create stronger forward-motion cues.
+        if (DrawY < 10'd300) begin
+            stripe_bit = drawy_scrolled[2];
+        end else if (DrawY < 10'd360) begin
+            stripe_bit = drawy_scrolled[3];
+        end else if (DrawY < 10'd420) begin
+            stripe_bit = drawy_scrolled[4];
+        end else begin
+            stripe_bit = drawy_scrolled[5];
+        end
+    end
+
+    always_comb begin
+        // Default environment color
+        if (DrawY < 10'd240) begin
+            // Dark blue sky with sparse twinkling stars.
+            env_r = 4'h0;
+            env_g = 4'h1;
+            env_b = 4'h4;
+            if (sky_star_on) begin
+                env_r = 4'hE;
+                env_g = 4'hE;
+                env_b = 4'hF;
+            end
+        end else begin
+            // Grass field with scrolling bands for depth/motion.
+            if (stripe_bit) begin
+                env_r = 4'h1;
+                env_g = 4'h6;
+                env_b = 4'h1;
+            end else begin
+                env_r = 4'h0;
+                env_g = 4'h4;
+                env_b = 4'h0;
+            end
+        end
+
+        // Lane guides to anchor the runner track.
+        lane_mark_on = 1'b0;
+        if (DrawY >= 10'd240) begin
+            if ((x_dist_left <= 10'd1) || (x_dist_center <= 10'd1) || (x_dist_right <= 10'd1)) begin
+                lane_mark_on = 1'b1;
+            end
+        end
+
+        if (lane_mark_on) begin
+            env_r = 4'h1;
+            env_g = 4'hA;
+            env_b = 4'h1;
+        end
+    end
+
     always_comb begin
         if (vde) begin // not in blanking interval
-            if (is_foreground) begin
+            // Base layer: environment.
+            Red = env_r;
+            Green = env_g;
+            Blue = env_b;
+
+            // Optional text glyphs over environment.
+            if ((code_n != 7'h00) && is_foreground) begin
                 Red = fg_r;
                 Green = fg_g;
                 Blue = fg_b;
-            end 
-            else begin
-                Red = bg_r;
-                Green = bg_g;
-                Blue = bg_b;
+            end
+
+            // Foreground sprites from partner assets (priority from back to front).
+            if (moon_valid) begin
+                Red = moon_r;
+                Green = moon_g;
+                Blue = moon_b;
+            end
+            if (fence_valid) begin
+                Red = fence_r;
+                Green = fence_g;
+                Blue = fence_b;
+            end
+            if (clover_valid) begin
+                Red = clover_r;
+                Green = clover_g;
+                Blue = clover_b;
+            end
+            if (sheep1_valid) begin
+                Red = sheep1_r;
+                Green = sheep1_g;
+                Blue = sheep1_b;
+            end
+            if (sheep2_valid) begin
+                Red = sheep2_r;
+                Green = sheep2_g;
+                Blue = sheep2_b;
+            end
+            if (sheepj1_valid) begin
+                Red = sheepj1_r;
+                Green = sheepj1_g;
+                Blue = sheepj1_b;
             end
         end else begin // blanking interval
             Red = 4'h0;

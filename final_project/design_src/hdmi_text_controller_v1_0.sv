@@ -66,6 +66,7 @@ logic [9:0] drawX, drawY, ballxsig, ballysig, ballsizesig;
 logic hsync, vsync, vde;
 logic [3:0] red, green, blue;
 logic reset_ah;
+logic [31:0] frame_count;
 
 
 // BRAM signals
@@ -82,10 +83,34 @@ logic [31:0] bram_color_out;
 // Sprites
 // address size calculated from COE memory depth and width
 logic [11:0] fence_addr;
-logic [2:0] fence_idx, sheep_j1_idx, sheep1_idx, sheep2_idx; // palette index
-
 logic [10:0] clover_addr, moon_addr, sheep_j1_addr, sheep1_addr, sheep2_addr;
+logic [2:0] fence_idx, sheep_j1_idx, sheep1_idx, sheep2_idx; // palette index
 logic [1:0] clover_idx, moon_idx;
+
+logic [3:0] fence_r, fence_g, fence_b;
+logic [3:0] clover_r, clover_g, clover_b;
+logic [3:0] moon_r, moon_g, moon_b;
+logic [3:0] sheep1_r, sheep1_g, sheep1_b;
+logic [3:0] sheep2_r, sheep2_g, sheep2_b;
+logic [3:0] sheepj1_r, sheepj1_g, sheepj1_b;
+
+logic moon_inrange, fence_inrange, clover_inrange, sheep1_inrange, sheep2_inrange, sheepj1_inrange;
+logic moon_inrange_d, fence_inrange_d, clover_inrange_d, sheep1_inrange_d, sheep2_inrange_d, sheepj1_inrange_d;
+logic moon_valid, fence_valid, clover_valid, sheep1_valid, sheep2_valid, sheepj1_valid;
+
+logic [9:0] local_x_moon, local_y_moon;
+logic [9:0] local_x_fence, local_y_fence;
+logic [9:0] local_x_clover, local_y_clover;
+logic [9:0] local_x_sheep1, local_y_sheep1;
+logic [9:0] local_x_sheep2, local_y_sheep2;
+logic [9:0] local_x_sheepj1, local_y_sheepj1;
+
+localparam int MOON_X = 560, MOON_Y = 20, MOON_W = 40, MOON_H = 40;
+localparam int FENCE_X = 80, FENCE_Y = 360, FENCE_W = 50, FENCE_H = 50;
+localparam int CLOVER_X = 220, CLOVER_Y = 340, CLOVER_W = 40, CLOVER_H = 50;
+localparam int SHEEP1_X = 300, SHEEP1_Y = 330, SHEEP1_W = 40, SHEEP1_H = 50;
+localparam int SHEEP2_X = 390, SHEEP2_Y = 330, SHEEP2_W = 40, SHEEP2_H = 50;
+localparam int SHEEPJ1_X = 480, SHEEPJ1_Y = 300, SHEEPJ1_W = 40, SHEEPJ1_H = 50;
 
 // Instantiation of Axi Bus Interface AXI
 hdmi_text_controller_v1_0_AXI # ( 
@@ -95,6 +120,7 @@ hdmi_text_controller_v1_0_AXI # (
     .vsync(vsync),
     .DrawX(drawX),
     .DrawY(drawY),
+    .frame_count(frame_count),
     .bram_addr(bram_addr),
     .bram_in(bram_in),
     .bram_out(bram_out),
@@ -167,7 +193,50 @@ always_ff @(posedge clk_25MHz) begin
     delayed_hsync <= hsync;
     delayed_vsync <= vsync;
     delayed_vde <= vde;
+    moon_inrange_d <= moon_inrange;
+    fence_inrange_d <= fence_inrange;
+    clover_inrange_d <= clover_inrange;
+    sheep1_inrange_d <= sheep1_inrange;
+    sheep2_inrange_d <= sheep2_inrange;
+    sheepj1_inrange_d <= sheepj1_inrange;
 end
+
+always_comb begin
+    moon_inrange = (drawX >= MOON_X) && (drawX < (MOON_X + MOON_W)) && (drawY >= MOON_Y) && (drawY < (MOON_Y + MOON_H));
+    fence_inrange = (drawX >= FENCE_X) && (drawX < (FENCE_X + FENCE_W)) && (drawY >= FENCE_Y) && (drawY < (FENCE_Y + FENCE_H));
+    clover_inrange = (drawX >= CLOVER_X) && (drawX < (CLOVER_X + CLOVER_W)) && (drawY >= CLOVER_Y) && (drawY < (CLOVER_Y + CLOVER_H));
+    sheep1_inrange = (drawX >= SHEEP1_X) && (drawX < (SHEEP1_X + SHEEP1_W)) && (drawY >= SHEEP1_Y) && (drawY < (SHEEP1_Y + SHEEP1_H));
+    sheep2_inrange = (drawX >= SHEEP2_X) && (drawX < (SHEEP2_X + SHEEP2_W)) && (drawY >= SHEEP2_Y) && (drawY < (SHEEP2_Y + SHEEP2_H));
+    sheepj1_inrange = (drawX >= SHEEPJ1_X) && (drawX < (SHEEPJ1_X + SHEEPJ1_W)) && (drawY >= SHEEPJ1_Y) && (drawY < (SHEEPJ1_Y + SHEEPJ1_H));
+
+    local_x_moon = drawX - MOON_X;
+    local_y_moon = drawY - MOON_Y;
+    local_x_fence = drawX - FENCE_X;
+    local_y_fence = drawY - FENCE_Y;
+    local_x_clover = drawX - CLOVER_X;
+    local_y_clover = drawY - CLOVER_Y;
+    local_x_sheep1 = drawX - SHEEP1_X;
+    local_y_sheep1 = drawY - SHEEP1_Y;
+    local_x_sheep2 = drawX - SHEEP2_X;
+    local_y_sheep2 = drawY - SHEEP2_Y;
+    local_x_sheepj1 = drawX - SHEEPJ1_X;
+    local_y_sheepj1 = drawY - SHEEPJ1_Y;
+
+    moon_addr = (moon_inrange) ? ((local_y_moon * MOON_W) + local_x_moon) : 11'd0;
+    fence_addr = (fence_inrange) ? ((local_y_fence * FENCE_W) + local_x_fence) : 12'd0;
+    clover_addr = (clover_inrange) ? ((local_y_clover * CLOVER_W) + local_x_clover) : 11'd0;
+    sheep1_addr = (sheep1_inrange) ? ((local_y_sheep1 * SHEEP1_W) + local_x_sheep1) : 11'd0;
+    sheep2_addr = (sheep2_inrange) ? ((local_y_sheep2 * SHEEP2_W) + local_x_sheep2) : 11'd0;
+    sheep_j1_addr = (sheepj1_inrange) ? ((local_y_sheepj1 * SHEEPJ1_W) + local_x_sheepj1) : 11'd0;
+end
+
+// Transparency key: #FF00B7 => 4'hF,4'h0,4'hB.
+assign moon_valid = moon_inrange_d && !((moon_r == 4'hF) && (moon_g == 4'h0) && (moon_b == 4'hB));
+assign fence_valid = fence_inrange_d && !((fence_r == 4'hF) && (fence_g == 4'h0) && (fence_b == 4'hB));
+assign clover_valid = clover_inrange_d && !((clover_r == 4'hF) && (clover_g == 4'h0) && (clover_b == 4'hB));
+assign sheep1_valid = sheep1_inrange_d && !((sheep1_r == 4'hF) && (sheep1_g == 4'h0) && (sheep1_b == 4'hB));
+assign sheep2_valid = sheep2_inrange_d && !((sheep2_r == 4'hF) && (sheep2_g == 4'h0) && (sheep2_b == 4'hB));
+assign sheepj1_valid = sheepj1_inrange_d && !((sheepj1_r == 4'hF) && (sheepj1_g == 4'h0) && (sheepj1_b == 4'hB));
 
 //Real Digital VGA to HDMI converter
 hdmi_tx_0 vga_to_hdmi (
@@ -202,8 +271,33 @@ color_mapper color_instance (
     .DrawX(delayed_drawX),
     .DrawY(delayed_drawY),
     .vde(delayed_vde),
+    .frame_count(frame_count),
     .char_data(bram_color_out),
     .color_regs(color_regs), // from the AXI module
+    .moon_valid(moon_valid),
+    .moon_r(moon_r),
+    .moon_g(moon_g),
+    .moon_b(moon_b),
+    .fence_valid(fence_valid),
+    .fence_r(fence_r),
+    .fence_g(fence_g),
+    .fence_b(fence_b),
+    .clover_valid(clover_valid),
+    .clover_r(clover_r),
+    .clover_g(clover_g),
+    .clover_b(clover_b),
+    .sheep1_valid(sheep1_valid),
+    .sheep1_r(sheep1_r),
+    .sheep1_g(sheep1_g),
+    .sheep1_b(sheep1_b),
+    .sheep2_valid(sheep2_valid),
+    .sheep2_r(sheep2_r),
+    .sheep2_g(sheep2_g),
+    .sheep2_b(sheep2_b),
+    .sheepj1_valid(sheepj1_valid),
+    .sheepj1_r(sheepj1_r),
+    .sheepj1_g(sheepj1_g),
+    .sheepj1_b(sheepj1_b),
 //    .color_addr(color_addr), // sends the requested index to the AXI module
     .Red(red),
     .Green(green),
@@ -231,40 +325,82 @@ blk_mem_gen_0 blk_mem_inst (
 
 // Sprite BROM
 // fence
-blk_fence fence_rom (
-    .addra(fence_addr),
-    .clk(clk_25MHz), // pixel clock
-    .douta(fence_idx)
+fence_rom fence_rom_inst (
+    .clock(clk_25MHz), // pixel clock
+    .address(fence_addr),
+    .q(fence_idx)
 );
 
-blk_clover clover_rom (
-    .addra(clover_addr),
-    .clk(clk_25MHz), // pixel clock
-    .douta(clover_idx)
+clover_rom clover_rom_inst (
+    .clock(clk_25MHz), // pixel clock
+    .address(clover_addr),
+    .q(clover_idx)
 );
 
-blk_moon moon_rom (
-    .addra(moon_addr),
-    .clk(clk_25MHz), // pixel clock
-    .douta(moon_idx)
+moon_rom moon_rom_inst (
+    .clock(clk_25MHz), // pixel clock
+    .address(moon_addr),
+    .q(moon_idx)
 );
 
-blk_sheep1 sheep1_rom (
-    .addra(sheep1_addr),
-    .clk(clk_25MHz), // pixel clock
-    .douta(sheep1_idx)
+sheep1_rom sheep1_rom_inst (
+    .clock(clk_25MHz), // pixel clock
+    .address(sheep1_addr),
+    .q(sheep1_idx)
 );
 
-blk_sheep2 sheep2_rom (
-    .addra(sheep2_addr),
-    .clk(clk_25MHz), // pixel clock
-    .douta(sheep2_idx)
+sheep2_rom sheep2_rom_inst (
+    .clock(clk_25MHz), // pixel clock
+    .address(sheep2_addr),
+    .q(sheep2_idx)
 );
 
-blk_sheep_j1 sheep_j1_rom (
-    .addra(sheep_j1_addr),
-    .clk(clk_25MHz), // pixel clock
-    .douta(sheep_j1_idx)
+sheep_j1_rom sheep_j1_rom_inst (
+    .clock(clk_25MHz), // pixel clock
+    .address(sheep_j1_addr),
+    .q(sheep_j1_idx)
+);
+
+fence_palette fence_palette_inst (
+    .index(fence_idx),
+    .red(fence_r),
+    .green(fence_g),
+    .blue(fence_b)
+);
+
+clover_palette clover_palette_inst (
+    .index(clover_idx),
+    .red(clover_r),
+    .green(clover_g),
+    .blue(clover_b)
+);
+
+moon_palette moon_palette_inst (
+    .index(moon_idx),
+    .red(moon_r),
+    .green(moon_g),
+    .blue(moon_b)
+);
+
+sheep1_palette sheep1_palette_inst (
+    .index(sheep1_idx),
+    .red(sheep1_r),
+    .green(sheep1_g),
+    .blue(sheep1_b)
+);
+
+sheep2_palette sheep2_palette_inst (
+    .index(sheep2_idx),
+    .red(sheep2_r),
+    .green(sheep2_g),
+    .blue(sheep2_b)
+);
+
+sheep_j1_palette sheep_j1_palette_inst (
+    .index(sheep_j1_idx),
+    .red(sheepj1_r),
+    .green(sheepj1_g),
+    .blue(sheepj1_b)
 );
 
 // User logic ends

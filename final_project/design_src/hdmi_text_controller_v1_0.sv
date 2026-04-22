@@ -326,39 +326,39 @@ blk_mem_gen_0 blk_mem_inst (
 // Sprite BROM
 // fence
 fence_rom fence_rom_inst (
-    .clock(clk_25MHz), // pixel clock
-    .address(fence_addr),
-    .q(fence_idx)
+    .clka(clk_25MHz), // pixel clock
+    .addra(fence_addr),
+    .douta(fence_idx)
 );
 
 clover_rom clover_rom_inst (
-    .clock(clk_25MHz), // pixel clock
-    .address(clover_addr),
-    .q(clover_idx)
+    .clka(clk_25MHz), // pixel clock
+    .addra(clover_addr),
+    .douta(clover_idx)
 );
 
 moon_rom moon_rom_inst (
-    .clock(clk_25MHz), // pixel clock
-    .address(moon_addr),
-    .q(moon_idx)
+    .clka(clk_25MHz), // pixel clock
+    .addra(moon_addr),
+    .douta(moon_idx)
 );
 
 sheep1_rom sheep1_rom_inst (
-    .clock(clk_25MHz), // pixel clock
-    .address(sheep1_addr),
-    .q(sheep1_idx)
+    .clka(clk_25MHz), // pixel clock
+    .addra(sheep1_addr),
+    .douta(sheep1_idx)
 );
 
 sheep2_rom sheep2_rom_inst (
-    .clock(clk_25MHz), // pixel clock
-    .address(sheep2_addr),
-    .q(sheep2_idx)
+    .clka(clk_25MHz), // pixel clock
+    .addra(sheep2_addr),
+    .douta(sheep2_idx)
 );
 
 sheep_j1_rom sheep_j1_rom_inst (
-    .clock(clk_25MHz), // pixel clock
-    .address(sheep_j1_addr),
-    .q(sheep_j1_idx)
+    .clka(clk_25MHz), // pixel clock
+    .addra(sheep_j1_addr),
+    .douta(sheep_j1_idx)
 );
 
 fence_palette fence_palette_inst (

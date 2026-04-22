@@ -132,7 +132,7 @@ module  color_mapper (
     logic [9:0] x_dist_right;
     logic stripe_bit;
 
-    assign drawy_scrolled = DrawY + {2'b00, frame_count[7:0]};
+    assign drawy_scrolled = DrawY - {2'b00, frame_count[7:0]};
     assign sky_star_on = ((DrawX[7:0] ^ DrawY[7:0] ^ frame_count[8:1]) == 8'h5A)
                       || ((DrawX[7:0] + DrawY[7:0] + frame_count[9:2]) == 8'hD3);
 
@@ -181,15 +181,19 @@ module  color_mapper (
         // Lane guides to anchor the runner track.
         lane_mark_on = 1'b0;
         if (DrawY >= 10'd240) begin
-            if ((x_dist_left <= 10'd1) || (x_dist_center <= 10'd1) || (x_dist_right <= 10'd1)) begin
+            // 3 wide lanes. Draw black borders at x = 160, 266, 373, 479
+            if ((DrawX == 10'd160) || (DrawX == 10'd161) ||
+                (DrawX == 10'd266) || (DrawX == 10'd267) ||
+                (DrawX == 10'd373) || (DrawX == 10'd374) ||
+                (DrawX == 10'd479) || (DrawX == 10'd480)) begin
                 lane_mark_on = 1'b1;
             end
         end
 
         if (lane_mark_on) begin
-            env_r = 4'h1;
-            env_g = 4'hA;
-            env_b = 4'h1;
+            env_r = 4'h0;
+            env_g = 4'h0;
+            env_b = 4'h0;
         end
     end
 

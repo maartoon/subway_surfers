@@ -127,13 +127,12 @@ module  color_mapper (
     logic [9:0] road_half_width;
     logic [9:0] road_left;
     logic [9:0] road_right;
-    logic [9:0] lane_mark_1;
-    logic [9:0] lane_mark_2;
+    logic [9:0] scrolled_y;
     logic sky_star_on;
     logic road_on;
-    logic lane_mark_on;
-    logic stripe_on;
-    logic [5:0] dash_phase;
+    logic [7:0] dirt_tex_seed;
+    logic [1:0] dirt_tex_level;
+    logic [3:0] dirt_base_r, dirt_base_g, dirt_base_b;
     localparam logic [9:0] HORIZON_Y = 10'd220;
 
     // Sparse fixed star coordinates to avoid patterned/line artifacts.
@@ -165,18 +164,11 @@ module  color_mapper (
         road_left = 10'd320 - road_half_width;
         road_right = 10'd320 + road_half_width;
 
-        // Inner guides reused as subtle dirt ruts.
-        lane_mark_1 = road_left + ((road_half_width * 2) / 3);
-        lane_mark_2 = road_left + ((road_half_width * 4) / 3);
-
         road_on = (DrawY >= HORIZON_Y) && (DrawX >= road_left) && (DrawX <= road_right);
-        lane_mark_on = road_on &&
-                       ((DrawX == lane_mark_1) || (DrawX == lane_mark_1 + 10'd1) ||
-                        (DrawX == lane_mark_2) || (DrawX == lane_mark_2 + 10'd1));
-
-        // Dashed lines moving toward the viewer (down the screen).
-        dash_phase = DrawY[5:0] - frame_count[6:1];
-        stripe_on = (dash_phase < 6'd26);
+        // Scroll texture coordinates so the dirt appears to move toward the viewer.
+        scrolled_y = DrawY - {4'b0000, frame_count[5:0]};
+        dirt_tex_seed = DrawX[7:0] ^ scrolled_y[7:0] ^ {row_depth[5:0], 2'b00};
+        dirt_tex_level = dirt_tex_seed[1:0] ^ dirt_tex_seed[3:2] ^ dirt_tex_seed[5:4];
     end
 
     always_comb begin
@@ -203,36 +195,39 @@ module  color_mapper (
             end
 
             if (road_on) begin
-                // Dirt road base color.
-                env_r = 4'h7;
-                env_g = 4'h4;
-                env_b = 4'h1;
+                // Smooth cartoon dirt palette: gently darker toward the viewer.
+                dirt_base_r = 4'h8 - {2'b00, row_depth[8:7]};
+                dirt_base_g = 4'h5 - {3'b000, row_depth[8]};
+                dirt_base_b = 4'h2;
 
-                // Slight depth shading: farther is lighter, closer is darker.
-                if (row_depth[7]) begin
-                    env_r = 4'h6;
-                    env_g = 4'h3;
-                    env_b = 4'h1;
-                end
+                env_r = dirt_base_r;
+                env_g = dirt_base_g;
+                env_b = dirt_base_b;
 
-                // Moving horizontal bands to create forward motion illusion.
-                if (stripe_on) begin
+                // Subtle moving mottled texture (no stripes / no hard bands).
+                case (dirt_tex_level)
+                    2'b01: begin
+                        env_r = dirt_base_r + 4'h1;
+                        env_g = dirt_base_g;
+                        env_b = dirt_base_b;
+                    end
+                    2'b10: begin
+                        env_r = dirt_base_r - 4'h1;
+                        env_g = dirt_base_g - 4'h1;
+                        env_b = dirt_base_b;
+                    end
+                    2'b11: begin
+                        env_r = dirt_base_r;
+                        env_g = dirt_base_g + 4'h1;
+                        env_b = dirt_base_b;
+                    end
+                    default: begin end
+                endcase
+
+                // Slightly darken the extreme road edges for shape definition.
+                if ((DrawX <= road_left + 10'd1) || (DrawX >= road_right - 10'd1)) begin
                     env_r = env_r - 4'h1;
                     env_g = env_g - 4'h1;
-                end
-
-                // Two darker wheel-rut lines for a natural trail look.
-                if (lane_mark_on) begin
-                    env_r = 4'h4;
-                    env_g = 4'h2;
-                    env_b = 4'h1;
-                end
-
-                // Sparse static dust/pebble highlights.
-                if (((DrawX[3:0] ^ DrawY[3:0]) == 4'hA) && (DrawY[2:0] == 3'b011)) begin
-                    env_r = 4'h8;
-                    env_g = 4'h5;
-                    env_b = 4'h2;
                 end
             end
         end

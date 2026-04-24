@@ -136,8 +136,9 @@ module  color_mapper (
     logic [5:0] dash_phase;
     localparam logic [9:0] HORIZON_Y = 10'd220;
 
-    assign sky_star_on = ((DrawX[7:0] ^ DrawY[7:0] ^ frame_count[8:1]) == 8'h5A)
-                      || ((DrawX[7:0] + DrawY[7:0] + frame_count[9:2]) == 8'hD3);
+    // Static stars (no frame_count term) so the sky does not animate.
+    assign sky_star_on = ((DrawX[7:0] ^ DrawY[7:0]) == 8'h5A)
+                      || ((DrawX[7:0] + DrawY[7:0]) == 8'hD3);
 
     always_comb begin
         if (DrawY > HORIZON_Y) begin
@@ -160,8 +161,8 @@ module  color_mapper (
                        ((DrawX == lane_mark_1) || (DrawX == lane_mark_1 + 10'd1) ||
                         (DrawX == lane_mark_2) || (DrawX == lane_mark_2 + 10'd1));
 
-        // Dashed lines; frame_count term keeps the design animation-ready.
-        dash_phase = DrawY[5:0] + frame_count[6:1];
+        // Dashed lines moving toward the viewer (down the screen).
+        dash_phase = DrawY[5:0] - frame_count[6:1];
         stripe_on = (dash_phase < 6'd26);
     end
 

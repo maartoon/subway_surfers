@@ -121,79 +121,91 @@ module  color_mapper (
     logic is_foreground;
     assign is_foreground = font_bit ^ iv;
 
-    // Procedural environment for Step 1:
-    // top half = starry sky, bottom half = scrolling grass/lane field.
+    // Perspective background primitives.
     logic [3:0] env_r, env_g, env_b;
-    logic [9:0] drawy_scrolled;
+    logic [9:0] row_depth;
+    logic [9:0] road_half_width;
+    logic [9:0] road_left;
+    logic [9:0] road_right;
+    logic [9:0] lane_mark_1;
+    logic [9:0] lane_mark_2;
     logic sky_star_on;
+    logic road_on;
     logic lane_mark_on;
-    logic [9:0] x_dist_center;
-    logic [9:0] x_dist_left;
-    logic [9:0] x_dist_right;
-    logic stripe_bit;
+    logic stripe_on;
+    logic [5:0] dash_phase;
+    localparam logic [9:0] HORIZON_Y = 10'd220;
 
-    assign drawy_scrolled = DrawY - {2'b00, frame_count[7:0]};
     assign sky_star_on = ((DrawX[7:0] ^ DrawY[7:0] ^ frame_count[8:1]) == 8'h5A)
                       || ((DrawX[7:0] + DrawY[7:0] + frame_count[9:2]) == 8'hD3);
 
-    assign x_dist_center = (DrawX >= 10'd320) ? (DrawX - 10'd320) : (10'd320 - DrawX);
-    assign x_dist_left   = (DrawX >= 10'd213) ? (DrawX - 10'd213) : (10'd213 - DrawX);
-    assign x_dist_right  = (DrawX >= 10'd426) ? (DrawX - 10'd426) : (10'd426 - DrawX);
-
     always_comb begin
-        // Thicker stripes near the bottom create stronger forward-motion cues.
-        if (DrawY < 10'd300) begin
-            stripe_bit = drawy_scrolled[2];
-        end else if (DrawY < 10'd360) begin
-            stripe_bit = drawy_scrolled[3];
-        end else if (DrawY < 10'd420) begin
-            stripe_bit = drawy_scrolled[4];
+        if (DrawY > HORIZON_Y) begin
+            row_depth = DrawY - HORIZON_Y;
         end else begin
-            stripe_bit = drawy_scrolled[5];
+            row_depth = 10'd0;
         end
+
+        // Narrow road at the horizon and wider near the bottom.
+        road_half_width = 10'd48 + (row_depth >> 1);
+        road_left = 10'd320 - road_half_width;
+        road_right = 10'd320 + road_half_width;
+
+        // Inner lane separators for a 3-lane road.
+        lane_mark_1 = road_left + ((road_half_width * 2) / 3);
+        lane_mark_2 = road_left + ((road_half_width * 4) / 3);
+
+        road_on = (DrawY >= HORIZON_Y) && (DrawX >= road_left) && (DrawX <= road_right);
+        lane_mark_on = road_on &&
+                       ((DrawX == lane_mark_1) || (DrawX == lane_mark_1 + 10'd1) ||
+                        (DrawX == lane_mark_2) || (DrawX == lane_mark_2 + 10'd1));
+
+        // Dashed lines; frame_count term keeps the design animation-ready.
+        dash_phase = DrawY[5:0] + frame_count[6:1];
+        stripe_on = (dash_phase < 6'd26);
     end
 
     always_comb begin
-        // Default environment color
-        if (DrawY < 10'd240) begin
-            // Dark blue sky with sparse twinkling stars.
+        if (DrawY < HORIZON_Y) begin
+            // Sky gradient dark-to-light approaching the horizon.
             env_r = 4'h0;
-            env_g = 4'h1;
-            env_b = 4'h4;
-            if (sky_star_on) begin
+            env_g = 4'h1 + DrawY[8:7];
+            env_b = 4'h4 + DrawY[8:6];
+            if ((DrawY < 10'd170) && sky_star_on) begin
                 env_r = 4'hE;
                 env_g = 4'hE;
                 env_b = 4'hF;
             end
         end else begin
-            // Grass field with scrolling bands for depth/motion.
-            if (stripe_bit) begin
+            // Ground defaults to grass; shade by depth.
+            if (DrawY[6]) begin
                 env_r = 4'h1;
-                env_g = 4'h6;
+                env_g = 4'h5;
                 env_b = 4'h1;
             end else begin
                 env_r = 4'h0;
-                env_g = 4'h4;
+                env_g = 4'h6;
                 env_b = 4'h0;
             end
-        end
 
-        // Lane guides to anchor the runner track.
-        lane_mark_on = 1'b0;
-        if (DrawY >= 10'd240) begin
-            // 3 wide lanes. Draw black borders at x = 160, 266, 373, 479
-            if ((DrawX == 10'd160) || (DrawX == 10'd161) ||
-                (DrawX == 10'd266) || (DrawX == 10'd267) ||
-                (DrawX == 10'd373) || (DrawX == 10'd374) ||
-                (DrawX == 10'd479) || (DrawX == 10'd480)) begin
-                lane_mark_on = 1'b1;
+            if (road_on) begin
+                env_r = 4'h2;
+                env_g = 4'h2;
+                env_b = 4'h2;
+            end
+
+            if (lane_mark_on && stripe_on) begin
+                env_r = 4'hE;
+                env_g = 4'hE;
+                env_b = 4'hC;
             end
         end
 
-        if (lane_mark_on) begin
-            env_r = 4'h0;
-            env_g = 4'h0;
-            env_b = 4'h0;
+        // Thin horizon blend helps avoid the hard split.
+        if ((DrawY >= (HORIZON_Y - 10'd2)) && (DrawY <= (HORIZON_Y + 10'd2))) begin
+            env_r = 4'h7;
+            env_g = 4'h5;
+            env_b = 4'h4;
         end
     end
 

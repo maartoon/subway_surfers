@@ -67,6 +67,7 @@ logic hsync, vsync, vde;
 logic [3:0] red, green, blue;
 logic reset_ah;
 logic [31:0] frame_count;
+logic sheep_use_frame2;
 
 
 // BRAM signals
@@ -105,12 +106,13 @@ logic [9:0] local_x_sheep1, local_y_sheep1;
 logic [9:0] local_x_sheep2, local_y_sheep2;
 logic [9:0] local_x_sheepj1, local_y_sheepj1;
 
+// Place animated sheep in the screen center and keep other sprites as static references on the side.
 localparam int MOON_X = 560, MOON_Y = 20, MOON_W = 40, MOON_H = 40;
-localparam int FENCE_X = 80, FENCE_Y = 360, FENCE_W = 50, FENCE_H = 50;
-localparam int CLOVER_X = 220, CLOVER_Y = 340, CLOVER_W = 40, CLOVER_H = 50;
+localparam int FENCE_X = 540, FENCE_Y = 170, FENCE_W = 50, FENCE_H = 50;
+localparam int CLOVER_X = 550, CLOVER_Y = 250, CLOVER_W = 40, CLOVER_H = 50;
 localparam int SHEEP1_X = 300, SHEEP1_Y = 330, SHEEP1_W = 40, SHEEP1_H = 50;
-localparam int SHEEP2_X = 390, SHEEP2_Y = 330, SHEEP2_W = 40, SHEEP2_H = 50;
-localparam int SHEEPJ1_X = 480, SHEEPJ1_Y = 300, SHEEPJ1_W = 40, SHEEPJ1_H = 50;
+localparam int SHEEP2_X = 300, SHEEP2_Y = 330, SHEEP2_W = 40, SHEEP2_H = 50;
+localparam int SHEEPJ1_X = 550, SHEEPJ1_Y = 330, SHEEPJ1_W = 40, SHEEPJ1_H = 50;
 
 // Instantiation of Axi Bus Interface AXI
 hdmi_text_controller_v1_0_AXI # ( 
@@ -231,11 +233,13 @@ always_comb begin
 end
 
 // Transparency key: index 0 is reserved for the background in all palettes.
+// frame_count increments at v-sync; bit[3] toggles every 8 frames => 7.5 swaps/sec at 60 Hz.
+assign sheep_use_frame2 = frame_count[3];
 assign moon_valid = moon_inrange_d && (moon_idx != 0);
 assign fence_valid = fence_inrange_d && (fence_idx != 1);
 assign clover_valid = clover_inrange_d && (clover_idx != 0);
-assign sheep1_valid = sheep1_inrange_d && (sheep1_idx != 1);
-assign sheep2_valid = sheep2_inrange_d && (sheep2_idx != 3);
+assign sheep1_valid = sheep1_inrange_d && ~sheep_use_frame2 && (sheep1_idx != 1);
+assign sheep2_valid = sheep2_inrange_d && sheep_use_frame2 && (sheep2_idx != 3);
 assign sheepj1_valid = sheepj1_inrange_d && (sheep_j1_idx != 0); 
 
 //Real Digital VGA to HDMI converter

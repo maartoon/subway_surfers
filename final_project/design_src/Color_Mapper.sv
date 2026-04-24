@@ -165,7 +165,7 @@ module  color_mapper (
         road_left = 10'd320 - road_half_width;
         road_right = 10'd320 + road_half_width;
 
-        // Inner lane separators for a 3-lane road.
+        // Inner guides reused as subtle dirt ruts.
         lane_mark_1 = road_left + ((road_half_width * 2) / 3);
         lane_mark_2 = road_left + ((road_half_width * 4) / 3);
 
@@ -203,15 +203,37 @@ module  color_mapper (
             end
 
             if (road_on) begin
-                env_r = 4'h2;
-                env_g = 4'h2;
-                env_b = 4'h2;
-            end
+                // Dirt road base color.
+                env_r = 4'h7;
+                env_g = 4'h4;
+                env_b = 4'h1;
 
-            if (lane_mark_on && stripe_on) begin
-                env_r = 4'hE;
-                env_g = 4'hE;
-                env_b = 4'hC;
+                // Slight depth shading: farther is lighter, closer is darker.
+                if (row_depth[7]) begin
+                    env_r = 4'h6;
+                    env_g = 4'h3;
+                    env_b = 4'h1;
+                end
+
+                // Moving horizontal bands to create forward motion illusion.
+                if (stripe_on) begin
+                    env_r = env_r - 4'h1;
+                    env_g = env_g - 4'h1;
+                end
+
+                // Two darker wheel-rut lines for a natural trail look.
+                if (lane_mark_on) begin
+                    env_r = 4'h4;
+                    env_g = 4'h2;
+                    env_b = 4'h1;
+                end
+
+                // Sparse static dust/pebble highlights.
+                if (((DrawX[3:0] ^ DrawY[3:0]) == 4'hA) && (DrawY[2:0] == 3'b011)) begin
+                    env_r = 4'h8;
+                    env_g = 4'h5;
+                    env_b = 4'h2;
+                end
             end
         end
 

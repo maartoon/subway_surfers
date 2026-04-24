@@ -127,14 +127,13 @@ module  color_mapper (
     logic [9:0] road_half_width;
     logic [9:0] road_left;
     logic [9:0] road_right;
-    logic [9:0] scrolled_y;
+    logic [9:0] lane_mark_1;
+    logic [9:0] lane_mark_2;
     logic sky_star_on;
     logic road_on;
-    logic [4:0] dirt_band_phase;
-    logic [2:0] clump_pattern;
-    logic [9:0] rut_left_x, rut_right_x;
-    logic rut_left_on, rut_right_on;
-    logic [3:0] dirt_base_r, dirt_base_g, dirt_base_b;
+    logic lane_mark_on;
+    logic stripe_on;
+    logic [5:0] dash_phase;
     localparam logic [9:0] HORIZON_Y = 10'd220;
 
     // Sparse fixed star coordinates to avoid patterned/line artifacts.
@@ -166,16 +165,18 @@ module  color_mapper (
         road_left = 10'd320 - road_half_width;
         road_right = 10'd320 + road_half_width;
 
-        road_on = (DrawY >= HORIZON_Y) && (DrawX >= road_left) && (DrawX <= road_right);
-        // Scroll coordinates so road texture moves toward the viewer (down the screen).
-        scrolled_y = DrawY - {4'b0000, frame_count[5:0]};
-        dirt_band_phase = scrolled_y[6:2];
-        clump_pattern = DrawX[5:3] + scrolled_y[5:3];
+        // Inner lane separators for a 3-lane road.
+        lane_mark_1 = road_left + ((road_half_width * 2) / 3);
+        lane_mark_2 = road_left + ((road_half_width * 4) / 3);
 
-        rut_left_x = road_left + (road_half_width >> 1);
-        rut_right_x = road_right - (road_half_width >> 1);
-        rut_left_on = road_on && (DrawX >= rut_left_x - 10'd1) && (DrawX <= rut_left_x + 10'd1);
-        rut_right_on = road_on && (DrawX >= rut_right_x - 10'd1) && (DrawX <= rut_right_x + 10'd1);
+        road_on = (DrawY >= HORIZON_Y) && (DrawX >= road_left) && (DrawX <= road_right);
+        lane_mark_on = road_on &&
+                       ((DrawX == lane_mark_1) || (DrawX == lane_mark_1 + 10'd1) ||
+                        (DrawX == lane_mark_2) || (DrawX == lane_mark_2 + 10'd1));
+
+        // Dashed lane markers moving toward the viewer (down the screen).
+        dash_phase = DrawY[5:0] - frame_count[6:1];
+        stripe_on = (dash_phase < 6'd26);
     end
 
     always_comb begin
@@ -202,41 +203,15 @@ module  color_mapper (
             end
 
             if (road_on) begin
-                // Cartoon dirt palette with gentle depth darkening.
-                dirt_base_r = 4'h9 - {2'b00, row_depth[9:8]} - {3'b000, row_depth[7]};
-                dirt_base_g = 4'h6 - {3'b000, row_depth[8]};
-                dirt_base_b = 4'h2;
+                env_r = 4'h2;
+                env_g = 4'h2;
+                env_b = 4'h2;
+            end
 
-                env_r = dirt_base_r;
-                env_g = dirt_base_g;
-                env_b = dirt_base_b;
-
-                // Repeating broad dirt flow bands that scroll toward the viewer.
-                if ((dirt_band_phase < 5'd6) || (dirt_band_phase >= 5'd26)) begin
-                    env_r = dirt_base_r + 4'h1;
-                    env_g = dirt_base_g + 4'h1;
-                end else if ((dirt_band_phase >= 5'd12) && (dirt_band_phase < 5'd18)) begin
-                    env_r = (dirt_base_r > 0) ? (dirt_base_r - 4'h1) : 4'h0;
-                    env_g = (dirt_base_g > 0) ? (dirt_base_g - 4'h1) : 4'h0;
-                end
-
-                // Small moving clumps for texture (subtle and stable, not flashing noise).
-                if (((clump_pattern == 3'd2) || (clump_pattern == 3'd5)) && (DrawX[2:1] == 2'b01)) begin
-                    env_r = (env_r > 0) ? (env_r - 4'h1) : 4'h0;
-                    env_g = (env_g > 0) ? (env_g - 4'h1) : 4'h0;
-                end
-
-                // Two slightly darker wheel ruts, common in cartoon dirt roads.
-                if (rut_left_on || rut_right_on) begin
-                    env_r = (env_r > 0) ? (env_r - 4'h1) : 4'h0;
-                    env_g = (env_g > 0) ? (env_g - 4'h1) : 4'h0;
-                end
-
-                // Slightly darken the extreme road edges for shape definition.
-                if ((DrawX <= road_left + 10'd1) || (DrawX >= road_right - 10'd1)) begin
-                    env_r = (env_r > 0) ? (env_r - 4'h1) : 4'h0;
-                    env_g = (env_g > 0) ? (env_g - 4'h1) : 4'h0;
-                end
+            if (lane_mark_on && stripe_on) begin
+                env_r = 4'hE;
+                env_g = 4'hE;
+                env_b = 4'hC;
             end
         end
 

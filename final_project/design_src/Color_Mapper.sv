@@ -130,8 +130,10 @@ module  color_mapper (
     logic [9:0] scrolled_y;
     logic sky_star_on;
     logic road_on;
-    logic [7:0] dirt_tex_seed;
-    logic [1:0] dirt_tex_level;
+    logic [4:0] dirt_band_phase;
+    logic [2:0] clump_pattern;
+    logic [9:0] rut_left_x, rut_right_x;
+    logic rut_left_on, rut_right_on;
     logic [3:0] dirt_base_r, dirt_base_g, dirt_base_b;
     localparam logic [9:0] HORIZON_Y = 10'd220;
 
@@ -165,10 +167,15 @@ module  color_mapper (
         road_right = 10'd320 + road_half_width;
 
         road_on = (DrawY >= HORIZON_Y) && (DrawX >= road_left) && (DrawX <= road_right);
-        // Scroll texture coordinates so the dirt appears to move toward the viewer.
+        // Scroll coordinates so road texture moves toward the viewer (down the screen).
         scrolled_y = DrawY - {4'b0000, frame_count[5:0]};
-        dirt_tex_seed = DrawX[7:0] ^ scrolled_y[7:0] ^ {row_depth[5:0], 2'b00};
-        dirt_tex_level = dirt_tex_seed[1:0] ^ dirt_tex_seed[3:2] ^ dirt_tex_seed[5:4];
+        dirt_band_phase = scrolled_y[6:2];
+        clump_pattern = DrawX[5:3] + scrolled_y[5:3];
+
+        rut_left_x = road_left + (road_half_width >> 1);
+        rut_right_x = road_right - (road_half_width >> 1);
+        rut_left_on = road_on && (DrawX >= rut_left_x - 10'd1) && (DrawX <= rut_left_x + 10'd1);
+        rut_right_on = road_on && (DrawX >= rut_right_x - 10'd1) && (DrawX <= rut_right_x + 10'd1);
     end
 
     always_comb begin
@@ -195,39 +202,40 @@ module  color_mapper (
             end
 
             if (road_on) begin
-                // Smooth cartoon dirt palette: gently darker toward the viewer.
-                dirt_base_r = 4'h8 - {2'b00, row_depth[8:7]};
-                dirt_base_g = 4'h5 - {3'b000, row_depth[8]};
+                // Cartoon dirt palette with gentle depth darkening.
+                dirt_base_r = 4'h9 - {2'b00, row_depth[9:8]} - {3'b000, row_depth[7]};
+                dirt_base_g = 4'h6 - {3'b000, row_depth[8]};
                 dirt_base_b = 4'h2;
 
                 env_r = dirt_base_r;
                 env_g = dirt_base_g;
                 env_b = dirt_base_b;
 
-                // Subtle moving mottled texture (no stripes / no hard bands).
-                case (dirt_tex_level)
-                    2'b01: begin
-                        env_r = dirt_base_r + 4'h1;
-                        env_g = dirt_base_g;
-                        env_b = dirt_base_b;
-                    end
-                    2'b10: begin
-                        env_r = dirt_base_r - 4'h1;
-                        env_g = dirt_base_g - 4'h1;
-                        env_b = dirt_base_b;
-                    end
-                    2'b11: begin
-                        env_r = dirt_base_r;
-                        env_g = dirt_base_g + 4'h1;
-                        env_b = dirt_base_b;
-                    end
-                    default: begin end
-                endcase
+                // Repeating broad dirt flow bands that scroll toward the viewer.
+                if ((dirt_band_phase < 5'd6) || (dirt_band_phase >= 5'd26)) begin
+                    env_r = dirt_base_r + 4'h1;
+                    env_g = dirt_base_g + 4'h1;
+                end else if ((dirt_band_phase >= 5'd12) && (dirt_band_phase < 5'd18)) begin
+                    env_r = (dirt_base_r > 0) ? (dirt_base_r - 4'h1) : 4'h0;
+                    env_g = (dirt_base_g > 0) ? (dirt_base_g - 4'h1) : 4'h0;
+                end
+
+                // Small moving clumps for texture (subtle and stable, not flashing noise).
+                if (((clump_pattern == 3'd2) || (clump_pattern == 3'd5)) && (DrawX[2:1] == 2'b01)) begin
+                    env_r = (env_r > 0) ? (env_r - 4'h1) : 4'h0;
+                    env_g = (env_g > 0) ? (env_g - 4'h1) : 4'h0;
+                end
+
+                // Two slightly darker wheel ruts, common in cartoon dirt roads.
+                if (rut_left_on || rut_right_on) begin
+                    env_r = (env_r > 0) ? (env_r - 4'h1) : 4'h0;
+                    env_g = (env_g > 0) ? (env_g - 4'h1) : 4'h0;
+                end
 
                 // Slightly darken the extreme road edges for shape definition.
                 if ((DrawX <= road_left + 10'd1) || (DrawX >= road_right - 10'd1)) begin
-                    env_r = env_r - 4'h1;
-                    env_g = env_g - 4'h1;
+                    env_r = (env_r > 0) ? (env_r - 4'h1) : 4'h0;
+                    env_g = (env_g > 0) ? (env_g - 4'h1) : 4'h0;
                 end
             end
         end

@@ -136,9 +136,22 @@ module  color_mapper (
     logic [5:0] dash_phase;
     localparam logic [9:0] HORIZON_Y = 10'd220;
 
-    // Static stars (no frame_count term) so the sky does not animate.
-    assign sky_star_on = ((DrawX[7:0] ^ DrawY[7:0]) == 8'h5A)
-                      || ((DrawX[7:0] + DrawY[7:0]) == 8'hD3);
+    // Sparse fixed star coordinates to avoid patterned/line artifacts.
+    assign sky_star_on =
+        ((DrawX == 10'd42)  && (DrawY == 10'd26))  ||
+        ((DrawX == 10'd88)  && (DrawY == 10'd58))  ||
+        ((DrawX == 10'd136) && (DrawY == 10'd34))  ||
+        ((DrawX == 10'd176) && (DrawY == 10'd92))  ||
+        ((DrawX == 10'd221) && (DrawY == 10'd44))  ||
+        ((DrawX == 10'd267) && (DrawY == 10'd76))  ||
+        ((DrawX == 10'd312) && (DrawY == 10'd28))  ||
+        ((DrawX == 10'd354) && (DrawY == 10'd61))  ||
+        ((DrawX == 10'd398) && (DrawY == 10'd39))  ||
+        ((DrawX == 10'd442) && (DrawY == 10'd83))  ||
+        ((DrawX == 10'd486) && (DrawY == 10'd47))  ||
+        ((DrawX == 10'd530) && (DrawY == 10'd70))  ||
+        ((DrawX == 10'd574) && (DrawY == 10'd36))  ||
+        ((DrawX == 10'd610) && (DrawY == 10'd98));
 
     always_comb begin
         if (DrawY > HORIZON_Y) begin

@@ -27,21 +27,37 @@ static XGpio Gpio_rst;
 static XGpio Gpio_int;
 static XSpi_Config *ConfigPtr;	/* Pointer to Configuration data */
 XTmrCtr Usb_timer;
+static const u32 kUsbSpiSlaveMask = 0x01;
+static BYTE max3421_spi_ok = 0;
+
+static void max_spi_select(int select_slave) {
+	int sel_status;
+	if (select_slave) {
+		sel_status = XSpi_SetSlaveSelect(&SpiInstance, kUsbSpiSlaveMask);
+	} else {
+		sel_status = XSpi_SetSlaveSelect(&SpiInstance, 0x0);
+	}
+	if (sel_status != XST_SUCCESS) {
+		xil_printf("XSpi_SetSlaveSelect failed: %d (select=%d)\n", sel_status, select_slave);
+	}
+}
 
 //Initialization of SPI port is already done for you
 void SPI_init() {
 
 	xil_printf("Initializing SPI\n");
 
-	ConfigPtr = XSpi_LookupConfig(XPAR_SPI_USB_DEVICE_ID);
+	ConfigPtr = XSpi_LookupConfig(XPAR_SPI_0_DEVICE_ID);
 	if (ConfigPtr == NULL) {
-		return XST_DEVICE_NOT_FOUND;
+		xil_printf("XSpi_LookupConfig failed for XPAR_SPI_USB_DEVICE_ID\n");
+		return;
 	}
 
 	Status = XSpi_CfgInitialize(&SpiInstance, ConfigPtr,
 				  ConfigPtr->BaseAddress);
 	if (Status != XST_SUCCESS) {
-		return XST_FAILURE;
+		xil_printf("XSpi_CfgInitialize failed: %d\n", Status);
+		return;
 	}
 
 	if (Status != XST_SUCCESS)
@@ -68,12 +84,12 @@ BYTE SPI_wr(BYTE data) {
 void MAXreg_wr(BYTE reg, BYTE val) {
 	int retval;
 
-	BYTE send_buf[2] = {reg + 2, val}; // reg + 2 sets DIR = 1 for write
+	BYTE send_buf[2] = {reg | 0x02, val}; // DIR bit sets write transaction
 	BYTE recv_buf[2];
 
 	//psuedocode:
 	//select MAX3421E 
-	XSpi_SetSlaveSelect(&SpiInstance, 1);
+	max_spi_select(1);
 
 	//write reg + 2 via SPI
 	//write val via SPI
@@ -86,7 +102,7 @@ void MAXreg_wr(BYTE reg, BYTE val) {
 	}
 
 	//deselect MAX3421E (may not be necessary if you are using SPI peripheral)
-	XSpi_SetSlaveSelect(&SpiInstance, 0);
+	max_spi_select(0);
 }
 
 
@@ -98,12 +114,12 @@ BYTE* MAXbytes_wr(BYTE reg, BYTE nbytes, BYTE* data) {
 	BYTE send_buf[nbytes + 1];
 	BYTE recv_buf[nbytes + 1];
 
-	send_buf[0] = reg + 2; // reg + 2 sets DIR = 1 for write
+	send_buf[0] = reg | 0x02; // DIR bit sets write transaction
 	memcpy(send_buf + 1, data, nbytes);
 
 	//psuedocode:
 	//select MAX3421E (may not be necessary if you are using SPI peripheral)
-	XSpi_SetSlaveSelect(&SpiInstance, 1);
+	max_spi_select(1);
 
 	//write reg + 2 via SPI
 	//write data[n] via SPI, where n goes from 0 to nbytes-1
@@ -116,7 +132,7 @@ BYTE* MAXbytes_wr(BYTE reg, BYTE nbytes, BYTE* data) {
 	}
 
 	//deselect MAX3421E (may not be necessary if you are using SPI peripheral)
-	XSpi_SetSlaveSelect(&SpiInstance, 0);
+	max_spi_select(0);
 
 	return (data + nbytes);
 }
@@ -130,7 +146,7 @@ BYTE MAXreg_rd(BYTE reg) {
 
 	//psuedocode:
 	//select MAX3421E (
-	XSpi_SetSlaveSelect(&SpiInstance, 1);
+	max_spi_select(1);
 
 	//write reg via SPI
 	//read val via SPI
@@ -143,7 +159,7 @@ BYTE MAXreg_rd(BYTE reg) {
 	}
 
 	//deselect MAX3421E (may not be necessary if you are using SPI peripheral)
-	XSpi_SetSlaveSelect(&SpiInstance, 0);
+	max_spi_select(0);
 
 	return recv_buf[1]; // data bytes follows command byte
 }
@@ -163,7 +179,7 @@ BYTE* MAXbytes_rd(BYTE reg, BYTE nbytes, BYTE* data) {
 
 	//psuedocode:
 	//select MAX3421E (may not be necessary if you are using SPI peripheral)
-	XSpi_SetSlaveSelect(&SpiInstance, 1);
+	max_spi_select(1);
 
 	//write reg via SPI
 	//read data[n] from SPI, where n goes from 0 to nbytes-1
@@ -176,7 +192,7 @@ BYTE* MAXbytes_rd(BYTE reg, BYTE nbytes, BYTE* data) {
 	}
 
 	//deselect MAX3421E (may not be necessary if you are using SPI peripheral)
-	XSpi_SetSlaveSelect(&SpiInstance, 0);
+	max_spi_select(0);
 
 	memcpy(data, recv_buf + 1, nbytes);
 	return (data + nbytes);
@@ -186,7 +202,7 @@ void MAX3421E_reset(void) {
 	Status = XGpio_Initialize(&Gpio_rst, XPAR_GPIO_USB_RST_DEVICE_ID);
 	XGpio_SetDataDirection(&Gpio_rst, 1, 0); //configure reset, and set reset to output
 	Status = XGpio_Initialize(&Gpio_int, XPAR_GPIO_USB_INT_DEVICE_ID);
-	XGpio_SetDataDirection(&Gpio_int, 1, ~1); //configure int, and set int to input
+	XGpio_SetDataDirection(&Gpio_int, 1, 0x1); //configure int channel bit 0 as input
 
 
 	//hardware reset, then software reset
@@ -194,19 +210,35 @@ void MAX3421E_reset(void) {
 	xil_printf ("Holding USB in Reset\n");
 	for (int delay = 0; delay < 0x7FFFF; delay ++){}
 	XGpio_DiscreteSet(&Gpio_rst, 1, 0x1);
-	xil_printf ("Revision is: %d, if this reads 0 check your MAXreg_rd \n", MAXreg_rd( rREVISION));
+	BYTE rev_samples[4];
+	xil_printf("MAX3421E revision reads: ");
+	for (int i = 0; i < 4; i++) {
+		rev_samples[i] = MAXreg_rd(rREVISION);
+		xil_printf("%x ", rev_samples[i]);
+	}
+	xil_printf("\n");
+	if ((rev_samples[0] == 0x00 && rev_samples[1] == 0x00 && rev_samples[2] == 0x00 && rev_samples[3] == 0x00) ||
+		(rev_samples[0] == 0xFF && rev_samples[1] == 0xFF && rev_samples[2] == 0xFF && rev_samples[3] == 0xFF)) {
+		xil_printf("SPI diagnostic: constant revision reads indicate MISO/SS/SCLK wiring or SPI mode issue.\n");
+	}
 	BYTE tmp = 0;
+	BYTE usbirq;
 
 	MAXreg_wr( rUSBCTL, bmCHIPRES);      //Chip (soft) reset. This stops the oscillator
 	MAXreg_wr( rUSBCTL, 0x00);           //Remove the reset
 
 	xil_printf("Waiting for PLL to stabilize: ");
-	while (!(MAXreg_rd( rUSBIRQ) & bmOSCOKIRQ)) { //wait until the PLL stabilizes
+	while (!((usbirq = MAXreg_rd(rUSBIRQ)) & bmOSCOKIRQ)) { //wait until the PLL stabilizes
 		tmp++;                                      //timeout after 256 attempts
-		xil_printf(".\n");
+		xil_printf(". (USBIRQ=%x)\n", usbirq);
 		if (tmp == 0) {
-			xil_printf("reset timeout!, check your MAXreg_wr\n");
+			xil_printf("reset timeout!, SPI link likely failing. Check MAX3421E SPI wiring/IP config.\n");
+			max3421_spi_ok = 0;
+			break;
 		}
+	}
+	if ((tmp != 0) && (usbirq & bmOSCOKIRQ)) {
+		max3421_spi_ok = 1;
 	}
 }
 /* turn USB power on/off                                                */
@@ -214,18 +246,28 @@ void MAX3421E_reset(void) {
 /* OVERLOAD pin of Vbus switch is connected to GPIN7                    */
 /* OVERLOAD state low. NO OVERLOAD or VBUS OFF state high.              */
 BOOL Vbus_power(BOOL action) {
-    BYTE tmp = MAXreg_rd( rIOPINS1 );       //copy of IOPINS2
-    if( action ) {                              //turn on by setting GPOUT0
-        tmp |= bmGPOUT0;
+    BYTE io1 = MAXreg_rd(rIOPINS1);
+    BYTE io2 = MAXreg_rd(rIOPINS2);
+
+    // Different lab revisions wire VBUS enable to different MAX3421E GPOUT pins.
+    // Drive both common mappings so bring-up does not depend on board revision.
+    if (action) {
+        io1 |= bmGPOUT0; // legacy mapping
+        io2 |= bmGPOUT7; // common ECE385 mapping
+    } else {
+        io1 &= ~bmGPOUT0;
+        io2 &= ~bmGPOUT7;
     }
-    else {                                      //turn off by clearing GPOUT0
-        tmp &= ~bmGPOUT0;
-    }
-    MAXreg_wr( rIOPINS1,tmp );                              //send GPOUT0
-    for (int delay = 0; delay < 0xFFFFF; delay ++){}		//delay a couple MS
-    xil_printf ("VBUS power state change \n");
-    return( TRUE );                                         // power on/off successful
-	return (1);
+
+    MAXreg_wr(rIOPINS1, io1);
+    MAXreg_wr(rIOPINS2, io2);
+    for (int delay = 0; delay < 0xFFFFF; delay++) {}
+
+    xil_printf("VBUS %s: IOPINS1=%x IOPINS2=%x\n",
+            action ? "ON" : "OFF",
+            MAXreg_rd(rIOPINS1),
+            MAXreg_rd(rIOPINS2));
+    return TRUE;
 }
 
 /* probe bus to determine device presence and speed */
@@ -281,6 +323,10 @@ void MAX3421E_init(void) {
 	SPI_init();
 	MAXreg_wr( rPINCTL, (bmFDUPSPI + bmINTLEVEL + bmGPXB)); //Full-duplex SPI, level interrupt, GPX
 	MAX3421E_reset();                                //stop/start the oscillator
+	if (!max3421_spi_ok) {
+		xil_printf("MAX3421E init aborted: SPI link not healthy.\n");
+		return;
+	}
 
 	//start USB timer
 	Status = XTmrCtr_Initialize(&Usb_timer, XPAR_TIMER_USB_AXI_DEVICE_ID);
@@ -318,9 +364,37 @@ void MAX3421E_init(void) {
 
 /* MAX3421 state change task and interrupt handler */
 void MAX3421E_Task(void) {
-	if (XGpio_DiscreteRead(&Gpio_int, 1) & 0x01 == 0) {
-		xil_printf("MAX interrupt\n\r");
-		MaxIntHandler();
+	static u32 poll_div = 0;
+	BYTE int_pin;
+
+	if (!max3421_spi_ok) {
+		return;
+	}
+	int_pin = (BYTE)(XGpio_DiscreteRead(&Gpio_int, 1) & 0x01);
+	if (int_pin == 0) {
+		BYTE hirq = MAXreg_rd(rHIRQ);
+		if (hirq != 0x00) {
+			xil_printf("MAX interrupt\n\r");
+			MaxIntHandler();
+		}
+	}
+
+	// Poll fallback for attach detect in case INT wiring/level is wrong.
+	// This keeps bring-up moving and gives visibility into raw bus state.
+	poll_div++;
+	if ((poll_div % 50000) == 0) {
+		BYTE bus_sample;
+		BYTE hirq;
+
+		MAXreg_wr(rHCTL, bmSAMPLEBUS);
+		bus_sample = MAXreg_rd(rHRSL) & (bmJSTATUS | bmKSTATUS | bmSE1);
+		hirq = MAXreg_rd(rHIRQ);
+		xil_printf("poll: INT=%x HIRQ=%x HRSL(JKSE1)=%x state=%x\n", int_pin, hirq, bus_sample, usb_task_state);
+
+		// If USB stack is waiting for device, proactively run bus probe.
+		if (usb_task_state == USB_DETACHED_SUBSTATE_WAIT_FOR_DEVICE) {
+			MAX_busprobe();
+		}
 	}
 	//if ( IORD_ALTERA_AVALON_PIO_DATA(USB_GPX_BASE) == 1) {
 	//	xil_printf("GPX interrupt\n\r");

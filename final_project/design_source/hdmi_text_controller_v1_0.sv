@@ -68,6 +68,7 @@ logic [3:0] red, green, blue;
 logic reset_ah;
 logic [31:0] frame_count;
 logic sheep_use_frame2;
+logic [31:0] game_regs [11];
 
 
 // BRAM signals
@@ -106,13 +107,25 @@ logic [9:0] local_x_sheep1, local_y_sheep1;
 logic [9:0] local_x_sheep2, local_y_sheep2;
 logic [9:0] local_x_sheepj1, local_y_sheepj1;
 
-// Place animated sheep in the screen center and keep other sprites as static references on the side.
+// Keep moon static; obstacle and player positions are controlled by software via AXI game registers.
 localparam int MOON_X = 560, MOON_Y = 20, MOON_W = 40, MOON_H = 40;
-localparam int FENCE_X = 540, FENCE_Y = 170, FENCE_W = 50, FENCE_H = 50;
-localparam int CLOVER_X = 550, CLOVER_Y = 250, CLOVER_W = 40, CLOVER_H = 50;
-localparam int SHEEP1_X = 300, SHEEP1_Y = 330, SHEEP1_W = 40, SHEEP1_H = 50;
-localparam int SHEEP2_X = 300, SHEEP2_Y = 330, SHEEP2_W = 40, SHEEP2_H = 50;
-localparam int SHEEPJ1_X = 550, SHEEPJ1_Y = 330, SHEEPJ1_W = 40, SHEEPJ1_H = 50;
+localparam int FENCE_W = 50, FENCE_H = 50;
+localparam int CLOVER_W = 40, CLOVER_H = 50;
+localparam int SHEEP_W = 40, SHEEP_H = 50;
+localparam logic [1:0] PLAYER_RUN  = 2'd0;
+localparam logic [1:0] PLAYER_JUMP = 2'd1;
+
+wire [9:0] player_x = game_regs[1][9:0]; // PLAYER_X
+wire [9:0] player_y = game_regs[2][9:0]; // PLAYER_Y
+wire [1:0] player_state = game_regs[3][1:0]; // PLAYER_STATE
+wire [9:0] fence_x = game_regs[4][9:0]; // FENCE_X
+wire [9:0] fence_y = game_regs[5][9:0]; // FENCE_Y
+wire       fence_active = game_regs[6][0]; // FENCE_VIS
+wire [9:0] clover_x = game_regs[7][9:0]; // CLOVER_X
+wire [9:0] clover_y = game_regs[8][9:0]; // CLOVER_Y
+wire       clover_active = game_regs[9][0]; // CLOVER_VIS
+wire [3:0] game_state = game_regs[0][3:0]; // GAME_CTRL
+wire       player_visible = (game_state == 4'd1);
 
 // Instantiation of Axi Bus Interface AXI
 hdmi_text_controller_v1_0_AXI # ( 
@@ -128,6 +141,7 @@ hdmi_text_controller_v1_0_AXI # (
     .bram_out(bram_out),
     .bram_we(bram_we),
     .color_regs(color_regs),
+    .game_regs(game_regs),
 
 
     .S_AXI_ACLK(axi_aclk),
@@ -205,31 +219,31 @@ end
 
 always_comb begin
     moon_inrange = (drawX >= MOON_X) && (drawX < (MOON_X + MOON_W)) && (drawY >= MOON_Y) && (drawY < (MOON_Y + MOON_H));
-    fence_inrange = (drawX >= FENCE_X) && (drawX < (FENCE_X + FENCE_W)) && (drawY >= FENCE_Y) && (drawY < (FENCE_Y + FENCE_H));
-    clover_inrange = (drawX >= CLOVER_X) && (drawX < (CLOVER_X + CLOVER_W)) && (drawY >= CLOVER_Y) && (drawY < (CLOVER_Y + CLOVER_H));
-    sheep1_inrange = (drawX >= SHEEP1_X) && (drawX < (SHEEP1_X + SHEEP1_W)) && (drawY >= SHEEP1_Y) && (drawY < (SHEEP1_Y + SHEEP1_H));
-    sheep2_inrange = (drawX >= SHEEP2_X) && (drawX < (SHEEP2_X + SHEEP2_W)) && (drawY >= SHEEP2_Y) && (drawY < (SHEEP2_Y + SHEEP2_H));
-    sheepj1_inrange = (drawX >= SHEEPJ1_X) && (drawX < (SHEEPJ1_X + SHEEPJ1_W)) && (drawY >= SHEEPJ1_Y) && (drawY < (SHEEPJ1_Y + SHEEPJ1_H));
+    fence_inrange = fence_active && (drawX >= fence_x) && (drawX < (fence_x + FENCE_W)) && (drawY >= fence_y) && (drawY < (fence_y + FENCE_H));
+    clover_inrange = clover_active && (drawX >= clover_x) && (drawX < (clover_x + CLOVER_W)) && (drawY >= clover_y) && (drawY < (clover_y + CLOVER_H));
+    sheep1_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
+    sheep2_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
+    sheepj1_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
 
     local_x_moon = drawX - MOON_X;
     local_y_moon = drawY - MOON_Y;
-    local_x_fence = drawX - FENCE_X;
-    local_y_fence = drawY - FENCE_Y;
-    local_x_clover = drawX - CLOVER_X;
-    local_y_clover = drawY - CLOVER_Y;
-    local_x_sheep1 = drawX - SHEEP1_X;
-    local_y_sheep1 = drawY - SHEEP1_Y;
-    local_x_sheep2 = drawX - SHEEP2_X;
-    local_y_sheep2 = drawY - SHEEP2_Y;
-    local_x_sheepj1 = drawX - SHEEPJ1_X;
-    local_y_sheepj1 = drawY - SHEEPJ1_Y;
+    local_x_fence = drawX - fence_x;
+    local_y_fence = drawY - fence_y;
+    local_x_clover = drawX - clover_x;
+    local_y_clover = drawY - clover_y;
+    local_x_sheep1 = drawX - player_x;
+    local_y_sheep1 = drawY - player_y;
+    local_x_sheep2 = drawX - player_x;
+    local_y_sheep2 = drawY - player_y;
+    local_x_sheepj1 = drawX - player_x;
+    local_y_sheepj1 = drawY - player_y;
 
     moon_addr = (moon_inrange) ? ((local_y_moon * MOON_W) + local_x_moon) : 11'd0;
     fence_addr = (fence_inrange) ? ((local_y_fence * FENCE_W) + local_x_fence) : 12'd0;
     clover_addr = (clover_inrange) ? ((local_y_clover * CLOVER_W) + local_x_clover) : 11'd0;
-    sheep1_addr = (sheep1_inrange) ? ((local_y_sheep1 * SHEEP1_W) + local_x_sheep1) : 11'd0;
-    sheep2_addr = (sheep2_inrange) ? ((local_y_sheep2 * SHEEP2_W) + local_x_sheep2) : 11'd0;
-    sheep_j1_addr = (sheepj1_inrange) ? ((local_y_sheepj1 * SHEEPJ1_W) + local_x_sheepj1) : 11'd0;
+    sheep1_addr = (sheep1_inrange) ? ((local_y_sheep1 * SHEEP_W) + local_x_sheep1) : 11'd0;
+    sheep2_addr = (sheep2_inrange) ? ((local_y_sheep2 * SHEEP_W) + local_x_sheep2) : 11'd0;
+    sheep_j1_addr = (sheepj1_inrange) ? ((local_y_sheepj1 * SHEEP_W) + local_x_sheepj1) : 11'd0;
 end
 
 // Transparency key: index 0 is reserved for the background in all palettes.
@@ -238,9 +252,9 @@ assign sheep_use_frame2 = frame_count[3];
 assign moon_valid = moon_inrange_d && (moon_idx != 0);
 assign fence_valid = fence_inrange_d && (fence_idx != 1);
 assign clover_valid = clover_inrange_d && (clover_idx != 0);
-assign sheep1_valid = sheep1_inrange_d && ~sheep_use_frame2 && (sheep1_idx != 1);
-assign sheep2_valid = sheep2_inrange_d && sheep_use_frame2 && (sheep2_idx != 3);
-assign sheepj1_valid = sheepj1_inrange_d && (sheep_j1_idx != 0); 
+assign sheep1_valid = sheep1_inrange_d && ~sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep1_idx != 1);
+assign sheep2_valid = sheep2_inrange_d && sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep2_idx != 3);
+assign sheepj1_valid = sheepj1_inrange_d && (player_state == PLAYER_JUMP) && (sheep_j1_idx != 0); 
 
 //Real Digital VGA to HDMI converter
 hdmi_tx_0 vga_to_hdmi (

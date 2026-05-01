@@ -10,6 +10,23 @@
 #define COLUMNS 80
 #define ROWS 30
 #define PALETTE_START 0x2000
+#define GAME_REG_START 0x2030
+
+#define GAME_STATE_MENU 0
+#define GAME_STATE_PLAYING 1
+#define GAME_STATE_GAMEOVER 2
+
+#define PLAYER_RUN 0
+#define PLAYER_JUMP 1
+#define PLAYER_DUCK 2
+
+#define HORIZON_Y 220
+#define PLAYER_BASE_Y 380
+#define PLAYER_JUMP_HEIGHT 40
+#define PLAYER_SPRITE_W 40
+#define PLAYER_SPRITE_H 50
+
+#define NUM_LANES 3
 
 #define STUDENT1NETID "martinx3"
 #define STUDENT2NETID "miafang2"
@@ -23,6 +40,18 @@ struct TEXT_HDMI_STRUCT {
 	uint32_t            FRAME_COUNT; //control registers should appear immediately after palette
 	uint32_t            DRAWX;
 	uint32_t            DRAWY;
+	uint32_t            RESERVED_80B;
+	uint32_t            GAME_CTRL;     // 0x80C
+	uint32_t            PLAYER_X;      // 0x80D
+	uint32_t            PLAYER_Y;      // 0x80E
+	uint32_t            PLAYER_STATE;  // 0x80F
+	uint32_t            FENCE_X;       // 0x810
+	uint32_t            FENCE_Y;       // 0x811
+	uint32_t            FENCE_VIS;     // 0x812
+	uint32_t            CLOVER_X;      // 0x813
+	uint32_t            CLOVER_Y;      // 0x814
+	uint32_t            CLOVER_VIS;    // 0x815
+	uint32_t            SCORE;         // 0x816
 };
 
 struct COLOR{
@@ -34,7 +63,7 @@ struct COLOR{
 
 
 //you may have to change this line depending on your platform designer
-static volatile struct TEXT_HDMI_STRUCT* hdmi_ctrl = XPAR_HDMI_TEXT_CONTROLLER_0_AXI_BASEADDR;
+static volatile struct TEXT_HDMI_STRUCT* hdmi_ctrl = (volatile struct TEXT_HDMI_STRUCT*)XPAR_HDMI_TEXT_CONTROLLER_0_AXI_BASEADDR;
 
 //CGA colors with names
 static struct COLOR colors[]={

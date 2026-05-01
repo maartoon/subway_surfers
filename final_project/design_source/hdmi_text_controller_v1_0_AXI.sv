@@ -52,6 +52,7 @@ module hdmi_text_controller_v1_0_AXI #
     output logic [3:0] bram_we, // write enable for bram
 
     output logic [C_S_AXI_DATA_WIDTH-1:0] color_regs [8], // specific color register to output
+    output logic [C_S_AXI_DATA_WIDTH-1:0] game_regs [11], // 0x80C to 0x816
 
     // User ports ends
 
@@ -175,6 +176,11 @@ logic	 slv_reg_wren;
 logic [C_S_AXI_DATA_WIDTH-1:0]	 reg_data_out;
 integer	 byte_index;
 logic	 aw_en;
+logic [11:0] aw_word_addr;
+logic [11:0] ar_word_addr;
+
+assign aw_word_addr = axi_awaddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB];
+assign ar_word_addr = axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB];
 
 // I/O Connections assignments
 
@@ -430,10 +436,10 @@ assign slv_reg_rden = axi_arready & S_AXI_ARVALID & ~axi_rvalid;
 always_comb
 begin
     // if axi_araddr < 0x800, we read from bram
-    if (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] < 12'h800) begin
+    if (ar_word_addr < 12'h800) begin
       reg_data_out = bram_out;
     end else begin
-      case(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB])
+      case(ar_word_addr)
         // if axi_araddr >= 0x800, we read from palette registers
         12'h800: reg_data_out = color_regs[0];
         12'h801: reg_data_out = color_regs[1];
@@ -446,6 +452,17 @@ begin
         12'h808: reg_data_out = frame_counter;
         12'h809: reg_data_out = DrawX;
         12'h80A: reg_data_out = DrawY;
+        12'h80C: reg_data_out = game_regs[0];
+        12'h80D: reg_data_out = game_regs[1];
+        12'h80E: reg_data_out = game_regs[2];
+        12'h80F: reg_data_out = game_regs[3];
+        12'h810: reg_data_out = game_regs[4];
+        12'h811: reg_data_out = game_regs[5];
+        12'h812: reg_data_out = game_regs[6];
+        12'h813: reg_data_out = game_regs[7];
+        12'h814: reg_data_out = game_regs[8];
+        12'h815: reg_data_out = game_regs[9];
+        12'h816: reg_data_out = game_regs[10];
         default: reg_data_out = 32'b0;
       endcase
     end
@@ -518,11 +535,26 @@ always_ff @(posedge S_AXI_ACLK) begin
   end 
   else begin
     // write into color registers if write is enabled and awaddr >= 0x800
-    if (slv_reg_wren && axi_awaddr[13:5] == 9'b100000000) begin  
+    if (slv_reg_wren && (aw_word_addr >= 12'h800) && (aw_word_addr <= 12'h807)) begin  
       for ( byte_index = 0; byte_index <= 3; byte_index = byte_index+1 ) begin
         if ( S_AXI_WSTRB[byte_index] == 1 ) begin
-          color_regs[axi_awaddr[4:2]][(byte_index*8) +: 8] <= S_AXI_WDATA[(byte_index*8) +: 8];
+          color_regs[aw_word_addr[2:0]][(byte_index*8) +: 8] <= S_AXI_WDATA[(byte_index*8) +: 8];
         end  
+      end
+    end
+  end
+end
+
+// write logic for game registers
+always_ff @(posedge S_AXI_ACLK) begin
+  if (S_AXI_ARESETN == 1'b0) begin
+    for (int i = 0; i < 11; i++) game_regs[i] <= 32'b0;
+  end else begin
+    if (slv_reg_wren && (aw_word_addr >= 12'h80C) && (aw_word_addr <= 12'h816)) begin
+      for (byte_index = 0; byte_index <= 3; byte_index = byte_index + 1) begin
+        if (S_AXI_WSTRB[byte_index] == 1) begin
+          game_regs[aw_word_addr - 12'h80C][(byte_index*8) +: 8] <= S_AXI_WDATA[(byte_index*8) +: 8];
+        end
       end
     end
   end

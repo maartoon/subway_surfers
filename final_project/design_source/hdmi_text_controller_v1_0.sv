@@ -107,8 +107,7 @@ logic [9:0] local_x_sheep1, local_y_sheep1;
 logic [9:0] local_x_sheep2, local_y_sheep2;
 logic [9:0] local_x_sheepj1, local_y_sheepj1;
 
-logic [9:0] fence_y_unscaled, fence_x_unscaled;
-logic [9:0] clover_y_unscaled, clover_x_unscaled;
+
 
 // Keep moon static; obstacle and player positions are controlled by software via AXI game registers.
 localparam [9:0] MOON_X = 10'd560, MOON_Y = 10'd20, MOON_W = 10'd40, MOON_H = 10'd40;
@@ -207,7 +206,8 @@ vga_controller vga (
 
 // @todo delays drawX, drawY, hsync, vsync by one cycle due to BRAM read latency
 logic [11:0] char_index;
-assign char_index = (drawY[9:4] * 80) + drawX[9:3];
+(* use_dsp = "no" *) wire [11:0] char_index_mult = (drawY[9:4] * 80) + drawX[9:3];
+assign char_index = char_index_mult;
 assign color_addr = char_index[11:1]; 
 
 // Create 1 cycle delay using registers 
@@ -248,20 +248,34 @@ end
     assign local_x_sheepj1 = drawX - player_x;
     assign local_y_sheepj1 = drawY - player_y;
 
-    assign moon_addr = (moon_inrange) ? ((local_y_moon * MOON_W) + local_x_moon) : 11'd0;
+    (* use_dsp = "no" *) wire [11:0] moon_addr_mult = (local_y_moon * MOON_W) + local_x_moon;
+    assign moon_addr = (moon_inrange) ? moon_addr_mult : 11'd0;
 
-    // 2.5D Scaling logic for obstacles using DSP multipliers
-    assign fence_y_unscaled = (local_y_fence * fence_scale_inv) >> 8;
-    assign fence_x_unscaled = (local_x_fence * fence_scale_inv) >> 8;
-    assign clover_y_unscaled = (local_y_clover * clover_scale_inv) >> 8;
-    assign clover_x_unscaled = (local_x_clover * clover_scale_inv) >> 8;
+    // 2.5D Scaling logic for obstacles using LUT multipliers
+    (* use_dsp = "no" *) wire [31:0] fence_y_mult = local_y_fence * fence_scale_inv;
+    (* use_dsp = "no" *) wire [31:0] fence_x_mult = local_x_fence * fence_scale_inv;
+    wire [15:0] fence_y_unscaled = fence_y_mult[23:8];
+    wire [15:0] fence_x_unscaled = fence_x_mult[23:8];
 
-    assign fence_addr = (fence_inrange) ? ((fence_y_unscaled * FENCE_W) + fence_x_unscaled) : 12'd0;
-    assign clover_addr = (clover_inrange) ? ((clover_y_unscaled * CLOVER_W) + clover_x_unscaled) : 11'd0;
+    (* use_dsp = "no" *) wire [31:0] clover_y_mult = local_y_clover * clover_scale_inv;
+    (* use_dsp = "no" *) wire [31:0] clover_x_mult = local_x_clover * clover_scale_inv;
+    wire [15:0] clover_y_unscaled = clover_y_mult[23:8];
+    wire [15:0] clover_x_unscaled = clover_x_mult[23:8];
+
+    (* use_dsp = "no" *) wire [31:0] fence_addr_mult = fence_y_unscaled * FENCE_W;
+    assign fence_addr = (fence_inrange) ? (fence_addr_mult[11:0] + fence_x_unscaled[11:0]) : 12'd0;
     
-    assign sheep1_addr = (sheep1_inrange) ? ((local_y_sheep1 * SHEEP_W) + local_x_sheep1) : 11'd0;
-    assign sheep2_addr = (sheep2_inrange) ? ((local_y_sheep2 * SHEEP_W) + local_x_sheep2) : 11'd0;
-    assign sheep_j1_addr = (sheepj1_inrange) ? ((local_y_sheepj1 * SHEEP_W) + local_x_sheepj1) : 11'd0;
+    (* use_dsp = "no" *) wire [31:0] clover_addr_mult = clover_y_unscaled * CLOVER_W;
+    assign clover_addr = (clover_inrange) ? (clover_addr_mult[10:0] + clover_x_unscaled[10:0]) : 11'd0;
+    
+    (* use_dsp = "no" *) wire [31:0] sheep1_addr_mult = local_y_sheep1 * SHEEP_W;
+    assign sheep1_addr = (sheep1_inrange) ? (sheep1_addr_mult[10:0] + local_x_sheep1) : 11'd0;
+    
+    (* use_dsp = "no" *) wire [31:0] sheep2_addr_mult = local_y_sheep2 * SHEEP_W;
+    assign sheep2_addr = (sheep2_inrange) ? (sheep2_addr_mult[10:0] + local_x_sheep2) : 11'd0;
+    
+    (* use_dsp = "no" *) wire [31:0] sheepj1_addr_mult = local_y_sheepj1 * SHEEP_W;
+    assign sheep_j1_addr = (sheepj1_inrange) ? (sheepj1_addr_mult[10:0] + local_x_sheepj1) : 11'd0;
 
 // Transparency key: index 0 is reserved for the background in all palettes.
 // frame_count increments at v-sync; bit[3] toggles every 8 frames => 7.5 swaps/sec at 60 Hz.

@@ -20,9 +20,9 @@
 #define PLAYER_JUMP 1
 #define PLAYER_DUCK 2
 
-#define HORIZON_Y 220
+#define HORIZON_Y 160
 #define PLAYER_BASE_Y 380
-#define PLAYER_JUMP_HEIGHT 40
+#define PLAYER_JUMP_HEIGHT 60
 #define PLAYER_SPRITE_W 40
 #define PLAYER_SPRITE_H 50
 #define FENCE_W 50

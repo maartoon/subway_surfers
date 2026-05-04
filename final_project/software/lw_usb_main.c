@@ -26,26 +26,28 @@ static int get_lane_x(int lane, int y_pos, int sprite_w) {
 	int row_depth = y_pos - HORIZON_Y;
 	int road_half_width;
 	int road_left;
-	int lane_width;
+	int road_width;
+	int lane_midpoint;
 
 	if (row_depth < 0) {
 		row_depth = 0;
 	}
 
-	road_half_width = 48 + (row_depth >> 1);
+	road_half_width = 64 + (row_depth >> 1);
 	road_left = 320 - road_half_width;
-	lane_width = (road_half_width * 2) / NUM_LANES;
-
-	return road_left + lane * lane_width + (lane_width / 2) - (sprite_w / 2);
+	road_width = road_half_width * 2;
+	
+	lane_midpoint = road_left + (road_width * (2 * lane + 1)) / (2 * NUM_LANES);
+	return lane_midpoint - (sprite_w / 2);
 }
 
 static void calc_scale(int y_pos, int base_w, int base_h, int *w_s, int *h_s, int *scale_inv) {
     int row_depth = y_pos - HORIZON_Y;
     if (row_depth < 0) row_depth = 0;
     
-    // scale * 256 = 51 + (333 * row_depth) / 260
-    int scale_256 = 51 + (333 * row_depth) / 260;
-    if (scale_256 < 20) scale_256 = 20; 
+    // Scale quadratically/linearly to simulate perspective: 15/256 at horizon, 465/256 at bottom
+    int scale_256 = 15 + (450 * row_depth) / 320;
+    if (scale_256 < 5) scale_256 = 5; 
     
     *w_s = (base_w * scale_256) >> 8;
     *h_s = (base_h * scale_256) >> 8;
@@ -55,18 +57,19 @@ static void calc_scale(int y_pos, int base_w, int base_h, int *w_s, int *h_s, in
 static int get_speed_fp(int y_pos) {
     int row_depth = y_pos - HORIZON_Y;
     if (row_depth < 0) row_depth = 0;
-    return 768 - (256 * row_depth) / 260; // 3.0 to 2.0
+    // Quadratic perspective speed: speed = base + (row_depth^2) / factor
+    int speed_fp = 64 + (row_depth * row_depth) / 100;
+    return speed_fp;
 }
 
 static int check_collision(int p_lane, int p_state, int o_lane, int o_y, int o_w_s, int o_h_s, int o_active) {
     if (!o_active) return 0;
-    int p_top = PLAYER_BASE_Y;
-    if (p_state == PLAYER_JUMP) p_top -= PLAYER_JUMP_HEIGHT;
-    int p_bot = p_top + PLAYER_SPRITE_H;
-    int o_top = o_y;
-    int o_bot = o_y + o_h_s;
     
-    if (p_lane == o_lane && o_bot >= p_top && o_top <= p_bot) {
+    int depth_diff = o_y - PLAYER_BASE_Y;
+    if (depth_diff < 0) depth_diff = -depth_diff;
+    
+    // Y-coordinate represents Z-depth. Only collide if overlapping in depth space!
+    if (p_lane == o_lane && depth_diff < 25) {
         if (p_state == PLAYER_JUMP) return 0; // jump clears ground obstacle
         return 1;
     }
@@ -75,13 +78,11 @@ static int check_collision(int p_lane, int p_state, int o_lane, int o_y, int o_w
 
 static int check_powerup(int p_lane, int p_state, int o_lane, int o_y, int o_w_s, int o_h_s, int o_active) {
     if (!o_active) return 0;
-    int p_top = PLAYER_BASE_Y;
-    if (p_state == PLAYER_JUMP) p_top -= PLAYER_JUMP_HEIGHT;
-    int p_bot = p_top + PLAYER_SPRITE_H;
-    int o_top = o_y;
-    int o_bot = o_y + o_h_s;
     
-    if (p_lane == o_lane && o_bot >= p_top && o_top <= p_bot) {
+    int depth_diff = o_y - PLAYER_BASE_Y;
+    if (depth_diff < 0) depth_diff = -depth_diff;
+    
+    if (p_lane == o_lane && depth_diff < 30) {
         return 1;
     }
     return 0;
@@ -312,7 +313,7 @@ int main() {
 
 					if (jump_edge && player_state == PLAYER_RUN) {
 						player_state = PLAYER_JUMP;
-						jump_timer = 30;
+						jump_timer = 45;
 					}
 
 					if (player_state == PLAYER_JUMP) {

@@ -138,7 +138,8 @@ module  color_mapper (
     logic [5:0] grass_phase;
     logic ground_line_on;
     logic [9:0] ground_line_phase;
-    localparam logic [9:0] HORIZON_Y = 10'd220;
+    localparam logic [9:0] HORIZON_Y = 10'd160;
+    logic [9:0] perspective_y;
 
     // Sparse fixed star coordinates to avoid patterned/line artifacts.
     assign sky_star_on =
@@ -164,8 +165,15 @@ module  color_mapper (
             row_depth = 10'd0;
         end
 
+        // Non-linear projection to make objects/patterns appear 2.5D
+        if (row_depth < 32) perspective_y = row_depth << 2;
+        else if (row_depth < 64) perspective_y = 128 + ((row_depth - 32) << 1);
+        else if (row_depth < 128) perspective_y = 192 + (row_depth - 64);
+        else if (row_depth < 256) perspective_y = 256 + ((row_depth - 128) >> 1);
+        else perspective_y = 320 + ((row_depth - 256) >> 2);
+
         // Narrow road at the horizon and wider near the bottom.
-        road_half_width = 10'd48 + (row_depth >> 1);
+        road_half_width = 10'd64 + (row_depth >> 1);
         road_left = 10'd320 - road_half_width;
         road_right = 10'd320 + road_half_width;
 
@@ -178,9 +186,9 @@ module  color_mapper (
                        ((DrawX == lane_mark_1) || (DrawX == lane_mark_1 + 10'd1) ||
                         (DrawX == lane_mark_2) || (DrawX == lane_mark_2 + 10'd1));
 
-        // Dashed lane markers moving toward the viewer (down the screen).
-        dash_phase = DrawY[5:0] - frame_count[6:1];
-        stripe_on = (dash_phase < 6'd26);
+        // Dashed lane markers moving toward the viewer (down the screen) with perspective
+        dash_phase = perspective_y[5:0] - frame_count[5:0];
+        stripe_on = (dash_phase < 6'd32);
 
         // Grass and ground lines
         grass_phase = DrawY[5:0] + frame_count[4:0];

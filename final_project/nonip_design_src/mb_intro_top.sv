@@ -13,14 +13,6 @@ module mb_intro_top(
     input logic clk_100MHz,
     input logic reset_rtl_0,
 
-    //USB signals
-    input logic [0:0] gpio_usb_int_tri_i,
-    output logic [0:0] gpio_usb_rst_tri_o,
-    input logic usb_spi_miso,
-    output logic usb_spi_mosi,
-    output logic usb_spi_sclk,
-    output logic [0:0] usb_spi_ss,
-
     //UART
     input logic uart_rtl_0_rxd,
     output logic uart_rtl_0_txd,
@@ -37,15 +29,6 @@ module mb_intro_top(
     output logic [7:0] hex_segB,
     output logic [3:0] hex_gridB);
 
-  logic [31:0] gpio_usb_keycode_0_tri_o;
-  logic [31:0] gpio_usb_keycode_1_tri_o;
-
-  // Keep HEX displays inactive for now.
-  assign hex_segA = 8'hFF;
-  assign hex_gridA = 4'hF;
-  assign hex_segB = 8'hFF;
-  assign hex_gridB = 4'hF;
-
   mb_block mb_block_i
        (.clk_100MHz(clk_100MHz),
        
@@ -53,16 +36,9 @@ module mb_intro_top(
        .HDMI_0_tmds_clk_p(HDMI_0_tmds_clk_p),
        .HDMI_0_tmds_data_n(HDMI_0_tmds_data_n),
        .HDMI_0_tmds_data_p(HDMI_0_tmds_data_p),
-       .gpio_usb_int_tri_i(gpio_usb_int_tri_i),
-       .gpio_usb_keycode_0_tri_o(gpio_usb_keycode_0_tri_o),
-       .gpio_usb_keycode_1_tri_o(gpio_usb_keycode_1_tri_o),
-       .gpio_usb_rst_tri_o(gpio_usb_rst_tri_o),
        
-       .reset_rtl_0(~reset_rtl_0),      // Keep reset polarity consistent with block design expectations
-       .uart_rtl_0_rxd(uart_rtl_0_rxd), // UART RX from board USB-UART into MicroBlaze
-       .uart_rtl_0_txd(uart_rtl_0_txd), // UART TX from MicroBlaze out to board USB-UART
-       .usb_spi_miso(usb_spi_miso),
-       .usb_spi_mosi(usb_spi_mosi),
-       .usb_spi_sclk(usb_spi_sclk),
-       .usb_spi_ss(usb_spi_ss));
+       .reset_rtl_0(~reset_rtl_0),      //Note the inversion of the reset button. Buttons are active low, but the MicroBlaze reset is active high
+       .uart_rtl_0_rxd(uart_rtl_0_txd),  //Note the switcheroo between RTX and TXD. This is a common source of confusion in embedded development
+       .uart_rtl_0_txd(uart_rtl_0_rxd)); //RXD = Received Data, and TXD = Transmitted Data, but whether data is transmitted or received depeneds on the
+                                    //perspective. Here, the TXD port means transmitted by the FPGA (but received by the Urbana Board's UART chip)
 endmodule

@@ -18,8 +18,6 @@ static XGpio Gpio_hex;
 
 static BYTE addr = 1; 				//hard-wired USB address
 const char* const devclasses[] = { " Uninitialized", " HID Keyboard", " HID Mouse", " Mass storage" };
-static const BYTE KEY_ENTER = 0x28;
-static const BYTE KEY_ENTER_KP = 0x58;
 
 static int get_lane_x(int lane, int y_pos) {
 	int row_depth = y_pos - HORIZON_Y;
@@ -45,25 +43,6 @@ static int report_has_key(const BOOT_KBD_REPORT *report, BYTE keycode) {
 		}
 	}
 	return 0;
-}
-
-static int reports_equal(const BOOT_KBD_REPORT *a, const BOOT_KBD_REPORT *b) {
-	if (a->mod != b->mod || a->reserved != b->reserved) {
-		return 0;
-	}
-	for (int i = 0; i < 6; i++) {
-		if (a->keycode[i] != b->keycode[i]) {
-			return 0;
-		}
-	}
-	return 1;
-}
-
-static void debug_print_kbd_report(const BOOT_KBD_REPORT *report) {
-	xil_printf("kbd mod=%x keys=%x %x %x %x %x %x\n",
-			report->mod,
-			report->keycode[0], report->keycode[1], report->keycode[2],
-			report->keycode[3], report->keycode[4], report->keycode[5]);
 }
 
 static void initialize_game_registers(void) {
@@ -136,7 +115,6 @@ int main() {
 	BYTE runningdebugflag = 0;//flag to dump out a bunch of information when we first get to USB_STATE_RUNNING
 	BYTE errorflag = 0; //flag once we get an error device so we don't keep dumping out state info
 	BYTE device = 0xFF;
-	BYTE last_usb_state = 0xFF;
 
 	int game_state = GAME_STATE_MENU;
 	int player_lane = 1;
@@ -159,10 +137,6 @@ int main() {
 	while (1) {
 		MAX3421E_Task();
 		USB_Task();
-		if (last_usb_state != GetUsbTaskState()) {
-			last_usb_state = GetUsbTaskState();
-			xil_printf("USB state -> %x\n", last_usb_state);
-		}
 		if (GetUsbTaskState() == USB_STATE_RUNNING) {
 			if (!runningdebugflag) {
 				runningdebugflag = 1;
@@ -192,16 +166,10 @@ int main() {
 					for (int i = 0; i < 6; i++) {
 						kbdbuf.keycode[i] = prev_kbdbuf.keycode[i];
 					}
-					kbdbuf.mod = prev_kbdbuf.mod;
-					kbdbuf.reserved = prev_kbdbuf.reserved;
 				} else if (rcode) {
 					xil_printf("Rcode: ");
 					xil_printf("%x \n", rcode);
 					continue;
-				}
-
-				if (!reports_equal(&kbdbuf, &prev_kbdbuf)) {
-					debug_print_kbd_report(&kbdbuf);
 				}
 
 				//Outputs the first 4 keycodes using the USB GPIO channel 1
@@ -212,12 +180,12 @@ int main() {
 				right_now = report_has_key(&kbdbuf, 0x07) || report_has_key(&kbdbuf, 0x4F);
 				jump_now = report_has_key(&kbdbuf, 0x1A) || report_has_key(&kbdbuf, 0x52);
 				duck_now = report_has_key(&kbdbuf, 0x16) || report_has_key(&kbdbuf, 0x51);
-				enter_now = report_has_key(&kbdbuf, KEY_ENTER) || report_has_key(&kbdbuf, KEY_ENTER_KP);
+				enter_now = report_has_key(&kbdbuf, 0x28);
 
 				left_prev = report_has_key(&prev_kbdbuf, 0x04) || report_has_key(&prev_kbdbuf, 0x50);
 				right_prev = report_has_key(&prev_kbdbuf, 0x07) || report_has_key(&prev_kbdbuf, 0x4F);
 				jump_prev = report_has_key(&prev_kbdbuf, 0x1A) || report_has_key(&prev_kbdbuf, 0x52);
-				enter_prev = report_has_key(&prev_kbdbuf, KEY_ENTER) || report_has_key(&prev_kbdbuf, KEY_ENTER_KP);
+				enter_prev = report_has_key(&prev_kbdbuf, 0x28);
 
 				left_edge = left_now && !left_prev;
 				right_edge = right_now && !right_prev;
@@ -225,14 +193,12 @@ int main() {
 				enter_edge = enter_now && !enter_prev;
 
 				if (game_state == GAME_STATE_MENU) {
-					// Accept either edge or held Enter to avoid missing a transition due to timing.
-					if (enter_edge || enter_now) {
+					if (enter_edge) {
 						game_state = GAME_STATE_PLAYING;
 						player_lane = 1;
 						player_state = PLAYER_RUN;
 						jump_timer = 0;
 						score = 0;
-						xil_printf("MENU -> PLAYING\n");
 						textHDMIColorClr();
 					}
 				} else if (game_state == GAME_STATE_PLAYING) {
@@ -277,8 +243,6 @@ int main() {
 				for (int i = 0; i < 6; i++) {
 					prev_kbdbuf.keycode[i] = kbdbuf.keycode[i];
 				}
-				prev_kbdbuf.mod = kbdbuf.mod;
-				prev_kbdbuf.reserved = kbdbuf.reserved;
 
 				sleepframe(1);
 			}

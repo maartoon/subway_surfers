@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include "platform.h"
 #include "lw_usb/GenericMacros.h"
 #include "lw_usb/GenericTypeDefs.h"
@@ -21,7 +22,7 @@ const char* const devclasses[] = { " Uninitialized", " HID Keyboard", " HID Mous
 static const BYTE KEY_ENTER = 0x28;
 static const BYTE KEY_ENTER_KP = 0x58;
 
-static int get_lane_x(int lane, int y_pos) {
+static int get_lane_x(int lane, int y_pos, int sprite_w) {
 	int row_depth = y_pos - HORIZON_Y;
 	int road_half_width;
 	int road_left;
@@ -35,7 +36,55 @@ static int get_lane_x(int lane, int y_pos) {
 	road_left = 320 - road_half_width;
 	lane_width = (road_half_width * 2) / NUM_LANES;
 
-	return road_left + lane * lane_width + (lane_width / 2) - (PLAYER_SPRITE_W / 2);
+	return road_left + lane * lane_width + (lane_width / 2) - (sprite_w / 2);
+}
+
+static void calc_scale(int y_pos, int base_w, int base_h, int *w_s, int *h_s, int *scale_inv) {
+    int row_depth = y_pos - HORIZON_Y;
+    if (row_depth < 0) row_depth = 0;
+    
+    // scale * 256 = 51 + (333 * row_depth) / 260
+    int scale_256 = 51 + (333 * row_depth) / 260;
+    if (scale_256 < 20) scale_256 = 20; 
+    
+    *w_s = (base_w * scale_256) >> 8;
+    *h_s = (base_h * scale_256) >> 8;
+    *scale_inv = (256 * 256) / scale_256; 
+}
+
+static int get_speed_fp(int y_pos) {
+    int row_depth = y_pos - HORIZON_Y;
+    if (row_depth < 0) row_depth = 0;
+    return 768 - (256 * row_depth) / 260; // 3.0 to 2.0
+}
+
+static int check_collision(int p_lane, int p_state, int o_lane, int o_y, int o_w_s, int o_h_s, int o_active) {
+    if (!o_active) return 0;
+    int p_top = PLAYER_BASE_Y;
+    if (p_state == PLAYER_JUMP) p_top -= PLAYER_JUMP_HEIGHT;
+    int p_bot = p_top + PLAYER_SPRITE_H;
+    int o_top = o_y;
+    int o_bot = o_y + o_h_s;
+    
+    if (p_lane == o_lane && o_bot >= p_top && o_top <= p_bot) {
+        if (p_state == PLAYER_JUMP) return 0; // jump clears ground obstacle
+        return 1;
+    }
+    return 0;
+}
+
+static int check_powerup(int p_lane, int p_state, int o_lane, int o_y, int o_w_s, int o_h_s, int o_active) {
+    if (!o_active) return 0;
+    int p_top = PLAYER_BASE_Y;
+    if (p_state == PLAYER_JUMP) p_top -= PLAYER_JUMP_HEIGHT;
+    int p_bot = p_top + PLAYER_SPRITE_H;
+    int o_top = o_y;
+    int o_bot = o_y + o_h_s;
+    
+    if (p_lane == o_lane && o_bot >= p_top && o_top <= p_bot) {
+        return 1;
+    }
+    return 0;
 }
 
 static int report_has_key(const BOOT_KBD_REPORT *report, BYTE keycode) {
@@ -68,7 +117,7 @@ static void debug_print_kbd_report(const BOOT_KBD_REPORT *report) {
 
 static void initialize_game_registers(void) {
 	hdmi_ctrl->GAME_CTRL = GAME_STATE_MENU;
-	hdmi_ctrl->PLAYER_X = get_lane_x(1, PLAYER_BASE_Y);
+	hdmi_ctrl->PLAYER_X = get_lane_x(1, PLAYER_BASE_Y, PLAYER_SPRITE_W);
 	hdmi_ctrl->PLAYER_Y = PLAYER_BASE_Y;
 	hdmi_ctrl->PLAYER_STATE = PLAYER_RUN;
 	hdmi_ctrl->FENCE_X = 0;
@@ -78,6 +127,13 @@ static void initialize_game_registers(void) {
 	hdmi_ctrl->CLOVER_Y = 0;
 	hdmi_ctrl->CLOVER_VIS = 0;
 	hdmi_ctrl->SCORE = 0;
+	
+	hdmi_ctrl->FENCE_W_S = FENCE_W;
+	hdmi_ctrl->FENCE_H_S = FENCE_H;
+	hdmi_ctrl->FENCE_SCALE_INV = 256;
+	hdmi_ctrl->CLOVER_W_S = CLOVER_W;
+	hdmi_ctrl->CLOVER_H_S = CLOVER_H;
+	hdmi_ctrl->CLOVER_SCALE_INV = 256;
 }
 
 BYTE GetDriverandReport() {
@@ -143,6 +199,14 @@ int main() {
 	int player_state = PLAYER_RUN;
 	int jump_timer = 0;
 	int score = 0;
+	
+	int obs_active = 0;
+	int obs_lane = 0;
+	int obs_y_fp = 0;
+
+	int pwr_active = 0;
+	int pwr_lane = 0;
+	int pwr_y_fp = 0;
 
 	initialize_game_registers();
 	textHDMIColorClr();
@@ -232,6 +296,9 @@ int main() {
 						player_state = PLAYER_RUN;
 						jump_timer = 0;
 						score = 0;
+						obs_active = 0;
+						pwr_active = 0;
+						srand(hdmi_ctrl->FRAME_COUNT);
 						xil_printf("MENU -> PLAYING\n");
 						textHDMIColorClr();
 					}
@@ -265,13 +332,94 @@ int main() {
 						player_y = PLAYER_BASE_Y - PLAYER_JUMP_HEIGHT;
 					}
 
-					hdmi_ctrl->GAME_CTRL = GAME_STATE_PLAYING;
-					hdmi_ctrl->PLAYER_X = get_lane_x(player_lane, PLAYER_BASE_Y);
-					hdmi_ctrl->PLAYER_Y = player_y;
-					hdmi_ctrl->PLAYER_STATE = player_state;
-					hdmi_ctrl->FENCE_VIS = 0;
-					hdmi_ctrl->CLOVER_VIS = 0;
-					hdmi_ctrl->SCORE = score;
+					// Obstacle logic
+					if (!obs_active) {
+						obs_lane = rand() % NUM_LANES;
+						obs_y_fp = HORIZON_Y << 8;
+						obs_active = 1;
+					}
+					if (obs_active) {
+						obs_y_fp += get_speed_fp(obs_y_fp >> 8);
+						int obs_y = obs_y_fp >> 8;
+						if (obs_y > 480) {
+							obs_active = 0;
+							score += 10;
+						} else {
+							int w_s, h_s, scale_inv;
+							calc_scale(obs_y, FENCE_W, FENCE_H, &w_s, &h_s, &scale_inv);
+							hdmi_ctrl->FENCE_X = get_lane_x(obs_lane, obs_y, w_s);
+							hdmi_ctrl->FENCE_Y = obs_y;
+							hdmi_ctrl->FENCE_W_S = w_s;
+							hdmi_ctrl->FENCE_H_S = h_s;
+							hdmi_ctrl->FENCE_SCALE_INV = scale_inv;
+							
+							if (check_collision(player_lane, player_state, obs_lane, obs_y, w_s, h_s, obs_active)) {
+								game_state = GAME_STATE_GAMEOVER;
+								hdmi_ctrl->GAME_CTRL = GAME_STATE_GAMEOVER;
+								player_state = 3; // dead
+							}
+						}
+					}
+
+					// Clover logic
+					if (!pwr_active && (rand() % 200 == 0)) {
+						pwr_lane = rand() % NUM_LANES;
+						if (!obs_active || pwr_lane != obs_lane) {
+							pwr_y_fp = HORIZON_Y << 8;
+							pwr_active = 1;
+						}
+					}
+					if (pwr_active) {
+						pwr_y_fp += get_speed_fp(pwr_y_fp >> 8);
+						int pwr_y = pwr_y_fp >> 8;
+						if (pwr_y > 480) {
+							pwr_active = 0;
+						} else {
+							int w_s, h_s, scale_inv;
+							calc_scale(pwr_y, CLOVER_W, CLOVER_H, &w_s, &h_s, &scale_inv);
+							hdmi_ctrl->CLOVER_X = get_lane_x(pwr_lane, pwr_y, w_s);
+							hdmi_ctrl->CLOVER_Y = pwr_y;
+							hdmi_ctrl->CLOVER_W_S = w_s;
+							hdmi_ctrl->CLOVER_H_S = h_s;
+							hdmi_ctrl->CLOVER_SCALE_INV = scale_inv;
+
+							if (check_powerup(player_lane, player_state, pwr_lane, pwr_y, w_s, h_s, pwr_active)) {
+								score += 50;
+								pwr_active = 0;
+							}
+						}
+					}
+
+					if (game_state == GAME_STATE_PLAYING) {
+						hdmi_ctrl->GAME_CTRL = GAME_STATE_PLAYING;
+						hdmi_ctrl->PLAYER_X = get_lane_x(player_lane, PLAYER_BASE_Y, PLAYER_SPRITE_W);
+						hdmi_ctrl->PLAYER_Y = player_y;
+						hdmi_ctrl->PLAYER_STATE = player_state;
+						hdmi_ctrl->FENCE_VIS = obs_active;
+						hdmi_ctrl->CLOVER_VIS = pwr_active;
+						hdmi_ctrl->SCORE = score;
+
+						char score_str[32];
+						sprintf(score_str, "Score: %d", score);
+						textHDMIDrawColorText(score_str, 1, 0, 0, 15);
+						printHex(score, 1);
+					}
+				} else if (game_state == GAME_STATE_GAMEOVER) {
+					textHDMIDrawColorText("GAME OVER", 35, 12, 0, 12);
+					char final_score[32];
+					sprintf(final_score, "Final Score: %d", score);
+					textHDMIDrawColorText(final_score, 32, 14, 0, 14);
+					textHDMIDrawColorText("Press ENTER to restart", 29, 18, 0, 10);
+					
+					if (enter_edge || enter_now) {
+						game_state = GAME_STATE_MENU;
+						textHDMIColorClr();
+						textHDMIDrawColorText("SUBWAY SURFERS", 33, 12, 0, 15);
+						textHDMIDrawColorText("Press ENTER to start", 30, 16, 0, 10);
+						hdmi_ctrl->GAME_CTRL = GAME_STATE_MENU;
+						hdmi_ctrl->FENCE_VIS = 0;
+						hdmi_ctrl->CLOVER_VIS = 0;
+					}
 				}
 
 				for (int i = 0; i < 6; i++) {

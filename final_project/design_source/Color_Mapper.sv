@@ -21,6 +21,7 @@ module  color_mapper (
 
     input logic [31:0] char_data, // register containing 2 characters 
     input logic [31:0] color_regs [8],
+    input logic [3:0] game_state,
     input logic moon_valid,
     input logic [3:0] moon_r, moon_g, moon_b,
     input logic fence_valid,
@@ -134,6 +135,9 @@ module  color_mapper (
     logic lane_mark_on;
     logic stripe_on;
     logic [5:0] dash_phase;
+    logic [5:0] grass_phase;
+    logic ground_line_on;
+    logic [9:0] ground_line_phase;
     localparam logic [9:0] HORIZON_Y = 10'd220;
 
     // Sparse fixed star coordinates to avoid patterned/line artifacts.
@@ -177,6 +181,11 @@ module  color_mapper (
         // Dashed lane markers moving toward the viewer (down the screen).
         dash_phase = DrawY[5:0] - frame_count[6:1];
         stripe_on = (dash_phase < 6'd26);
+
+        // Grass and ground lines
+        grass_phase = DrawY[5:0] + frame_count[4:0];
+        ground_line_phase = (DrawY + frame_count[5:0]) & 10'h03F;
+        ground_line_on = (DrawY > HORIZON_Y) && (ground_line_phase < (row_depth >> 4));
     end
 
     always_comb begin
@@ -192,13 +201,19 @@ module  color_mapper (
             end
         end else begin
             // Ground defaults to grass; shade by depth.
-            if (DrawY[6]) begin
+            if (grass_phase[5]) begin
                 env_r = 4'h1;
                 env_g = 4'h5;
                 env_b = 4'h1;
             end else begin
                 env_r = 4'h0;
                 env_g = 4'h6;
+                env_b = 4'h0;
+            end
+            
+            if (ground_line_on) begin
+                env_r = 4'h0;
+                env_g = 4'h3;
                 env_b = 4'h0;
             end
 
@@ -267,6 +282,13 @@ module  color_mapper (
                 Red = sheepj1_r;
                 Green = sheepj1_g;
                 Blue = sheepj1_b;
+            end
+
+            // Game over dimming
+            if (game_state == 4'd2) begin
+                Red = Red >> 1;
+                Green = Green >> 1;
+                Blue = Blue >> 1;
             end
         end else begin // blanking interval
             Red = 4'h0;

@@ -25,6 +25,10 @@
 #define PLAYER_JUMP_HEIGHT 40
 #define PLAYER_SPRITE_W 40
 #define PLAYER_SPRITE_H 50
+#define FENCE_W 50
+#define FENCE_H 50
+#define CLOVER_W 40
+#define CLOVER_H 50
 
 #define NUM_LANES 3
 
@@ -52,6 +56,12 @@ struct TEXT_HDMI_STRUCT {
 	uint32_t            CLOVER_Y;      // 0x814
 	uint32_t            CLOVER_VIS;    // 0x815
 	uint32_t            SCORE;         // 0x816
+	uint32_t            FENCE_W_S;     // 0x817
+	uint32_t            FENCE_H_S;     // 0x818
+	uint32_t            FENCE_SCALE_INV; // 0x819
+	uint32_t            CLOVER_W_S;    // 0x81A
+	uint32_t            CLOVER_H_S;    // 0x81B
+	uint32_t            CLOVER_SCALE_INV; // 0x81C
 };
 
 struct COLOR{
@@ -63,7 +73,7 @@ struct COLOR{
 
 
 //you may have to change this line depending on your platform designer
-static volatile struct TEXT_HDMI_STRUCT* hdmi_ctrl = (volatile struct TEXT_HDMI_STRUCT*)XPAR_HDMI_TEXT_CONTROLLER_0_AXI_BASEADDR;
+static volatile struct TEXT_HDMI_STRUCT* hdmi_ctrl = (volatile struct TEXT_HDMI_STRUCT*)XPAR_HDMI_GRAPHICS_CONTROLLER_0_AXI_BASEADDR;
 
 //CGA colors with names
 static struct COLOR colors[]={

@@ -68,7 +68,7 @@ logic [3:0] red, green, blue;
 logic reset_ah;
 logic [31:0] frame_count;
 logic sheep_use_frame2;
-logic [31:0] game_regs [11];
+logic [31:0] game_regs [17];
 
 
 // BRAM signals
@@ -107,11 +107,14 @@ logic [9:0] local_x_sheep1, local_y_sheep1;
 logic [9:0] local_x_sheep2, local_y_sheep2;
 logic [9:0] local_x_sheepj1, local_y_sheepj1;
 
+logic [9:0] fence_y_unscaled, fence_x_unscaled;
+logic [9:0] clover_y_unscaled, clover_x_unscaled;
+
 // Keep moon static; obstacle and player positions are controlled by software via AXI game registers.
-localparam int MOON_X = 560, MOON_Y = 20, MOON_W = 40, MOON_H = 40;
-localparam int FENCE_W = 50, FENCE_H = 50;
-localparam int CLOVER_W = 40, CLOVER_H = 50;
-localparam int SHEEP_W = 40, SHEEP_H = 50;
+localparam [9:0] MOON_X = 10'd560, MOON_Y = 10'd20, MOON_W = 10'd40, MOON_H = 10'd40;
+localparam [9:0] FENCE_W = 10'd50, FENCE_H = 10'd50;
+localparam [9:0] CLOVER_W = 10'd40, CLOVER_H = 10'd50;
+localparam [9:0] SHEEP_W = 10'd40, SHEEP_H = 10'd50;
 localparam logic [1:0] PLAYER_RUN  = 2'd0;
 localparam logic [1:0] PLAYER_JUMP = 2'd1;
 
@@ -126,6 +129,14 @@ wire [9:0] clover_y = game_regs[8][9:0]; // CLOVER_Y
 wire       clover_active = game_regs[9][0]; // CLOVER_VIS
 wire [3:0] game_state = game_regs[0][3:0]; // GAME_CTRL
 wire       player_visible = (game_state == 4'd1);
+
+wire [9:0] fence_w_s = game_regs[11][9:0]; // FENCE_W_S
+wire [9:0] fence_h_s = game_regs[12][9:0]; // FENCE_H_S
+wire [15:0] fence_scale_inv = game_regs[13][15:0]; // FENCE_SCALE_INV
+
+wire [9:0] clover_w_s = game_regs[14][9:0]; // CLOVER_W_S
+wire [9:0] clover_h_s = game_regs[15][9:0]; // CLOVER_H_S
+wire [15:0] clover_scale_inv = game_regs[16][15:0]; // CLOVER_SCALE_INV
 
 // Instantiation of Axi Bus Interface AXI
 hdmi_text_controller_v1_0_AXI # ( 
@@ -217,34 +228,40 @@ always_ff @(posedge clk_25MHz) begin
     sheepj1_inrange_d <= sheepj1_inrange;
 end
 
-always_comb begin
-    moon_inrange = (drawX >= MOON_X) && (drawX < (MOON_X + MOON_W)) && (drawY >= MOON_Y) && (drawY < (MOON_Y + MOON_H));
-    fence_inrange = fence_active && (drawX >= fence_x) && (drawX < (fence_x + FENCE_W)) && (drawY >= fence_y) && (drawY < (fence_y + FENCE_H));
-    clover_inrange = clover_active && (drawX >= clover_x) && (drawX < (clover_x + CLOVER_W)) && (drawY >= clover_y) && (drawY < (clover_y + CLOVER_H));
-    sheep1_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
-    sheep2_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
-    sheepj1_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
+    assign moon_inrange = (drawX >= MOON_X) && (drawX < (MOON_X + MOON_W)) && (drawY >= MOON_Y) && (drawY < (MOON_Y + MOON_H));
+    assign fence_inrange = fence_active && (drawX >= fence_x) && (drawX < (fence_x + fence_w_s)) && (drawY >= fence_y) && (drawY < (fence_y + fence_h_s));
+    assign clover_inrange = clover_active && (drawX >= clover_x) && (drawX < (clover_x + clover_w_s)) && (drawY >= clover_y) && (drawY < (clover_y + clover_h_s));
+    assign sheep1_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
+    assign sheep2_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
+    assign sheepj1_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
 
-    local_x_moon = drawX - MOON_X;
-    local_y_moon = drawY - MOON_Y;
-    local_x_fence = drawX - fence_x;
-    local_y_fence = drawY - fence_y;
-    local_x_clover = drawX - clover_x;
-    local_y_clover = drawY - clover_y;
-    local_x_sheep1 = drawX - player_x;
-    local_y_sheep1 = drawY - player_y;
-    local_x_sheep2 = drawX - player_x;
-    local_y_sheep2 = drawY - player_y;
-    local_x_sheepj1 = drawX - player_x;
-    local_y_sheepj1 = drawY - player_y;
+    assign local_x_moon = drawX - MOON_X;
+    assign local_y_moon = drawY - MOON_Y;
+    assign local_x_fence = drawX - fence_x;
+    assign local_y_fence = drawY - fence_y;
+    assign local_x_clover = drawX - clover_x;
+    assign local_y_clover = drawY - clover_y;
+    assign local_x_sheep1 = drawX - player_x;
+    assign local_y_sheep1 = drawY - player_y;
+    assign local_x_sheep2 = drawX - player_x;
+    assign local_y_sheep2 = drawY - player_y;
+    assign local_x_sheepj1 = drawX - player_x;
+    assign local_y_sheepj1 = drawY - player_y;
 
-    moon_addr = (moon_inrange) ? ((local_y_moon * MOON_W) + local_x_moon) : 11'd0;
-    fence_addr = (fence_inrange) ? ((local_y_fence * FENCE_W) + local_x_fence) : 12'd0;
-    clover_addr = (clover_inrange) ? ((local_y_clover * CLOVER_W) + local_x_clover) : 11'd0;
-    sheep1_addr = (sheep1_inrange) ? ((local_y_sheep1 * SHEEP_W) + local_x_sheep1) : 11'd0;
-    sheep2_addr = (sheep2_inrange) ? ((local_y_sheep2 * SHEEP_W) + local_x_sheep2) : 11'd0;
-    sheep_j1_addr = (sheepj1_inrange) ? ((local_y_sheepj1 * SHEEP_W) + local_x_sheepj1) : 11'd0;
-end
+    assign moon_addr = (moon_inrange) ? ((local_y_moon * MOON_W) + local_x_moon) : 11'd0;
+
+    // 2.5D Scaling logic for obstacles using DSP multipliers
+    assign fence_y_unscaled = (local_y_fence * fence_scale_inv) >> 8;
+    assign fence_x_unscaled = (local_x_fence * fence_scale_inv) >> 8;
+    assign clover_y_unscaled = (local_y_clover * clover_scale_inv) >> 8;
+    assign clover_x_unscaled = (local_x_clover * clover_scale_inv) >> 8;
+
+    assign fence_addr = (fence_inrange) ? ((fence_y_unscaled * FENCE_W) + fence_x_unscaled) : 12'd0;
+    assign clover_addr = (clover_inrange) ? ((clover_y_unscaled * CLOVER_W) + clover_x_unscaled) : 11'd0;
+    
+    assign sheep1_addr = (sheep1_inrange) ? ((local_y_sheep1 * SHEEP_W) + local_x_sheep1) : 11'd0;
+    assign sheep2_addr = (sheep2_inrange) ? ((local_y_sheep2 * SHEEP_W) + local_x_sheep2) : 11'd0;
+    assign sheep_j1_addr = (sheepj1_inrange) ? ((local_y_sheepj1 * SHEEP_W) + local_x_sheepj1) : 11'd0;
 
 // Transparency key: index 0 is reserved for the background in all palettes.
 // frame_count increments at v-sync; bit[3] toggles every 8 frames => 7.5 swaps/sec at 60 Hz.
@@ -292,6 +309,7 @@ color_mapper color_instance (
     .frame_count(frame_count),
     .char_data(bram_color_out),
     .color_regs(color_regs), // from the AXI module
+    .game_state(game_state),
     .moon_valid(moon_valid),
     .moon_r(moon_r),
     .moon_g(moon_g),

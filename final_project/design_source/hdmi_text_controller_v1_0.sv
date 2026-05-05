@@ -388,15 +388,18 @@ end
 // Transparency key: index 0 is reserved for the background in all palettes.
 // frame_count increments at v-sync; bit[3] toggles every 8 frames => 7.5 swaps/sec at 60 Hz.
 assign sheep_use_frame2 = frame_count[3];
-assign moon_valid = moon_inrange_d2 && (moon_idx != 0);
-assign fence_valid = fence_inrange_d2 && (fence_idx != 1);
-assign fence2_valid = fence2_inrange_d2 && (fence2_idx != 1);
-assign fence3_valid = fence3_inrange_d2 && (fence3_idx != 1);
-assign fence4_valid = fence4_inrange_d2 && (fence4_idx != 1);
-assign clover_valid = clover_inrange_d2 && (clover_idx != 0);
-assign sheep1_valid = sheep1_inrange_d2 && ~sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep1_idx != 1);
-assign sheep2_valid = sheep2_inrange_d2 && sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep2_idx != 3);
-assign sheepj1_valid = sheepj1_inrange_d2 && (player_state == PLAYER_JUMP) && (sheep_j1_idx != 0); 
+
+`define NOT_PINK(r, g, b) !(r >= 4'h8 && g <= 4'h4 && b >= 4'h6)
+
+assign moon_valid = moon_inrange_d2 && (moon_idx != 0) && `NOT_PINK(moon_r, moon_g, moon_b);
+assign fence_valid = fence_inrange_d2 && (fence_idx != 1) && `NOT_PINK(fence_r, fence_g, fence_b);
+assign fence2_valid = fence2_inrange_d2 && (fence2_idx != 1) && `NOT_PINK(fence2_r, fence2_g, fence2_b);
+assign fence3_valid = fence3_inrange_d2 && (fence3_idx != 1) && `NOT_PINK(fence3_r, fence3_g, fence3_b);
+assign fence4_valid = fence4_inrange_d2 && (fence4_idx != 1) && `NOT_PINK(fence4_r, fence4_g, fence4_b);
+assign clover_valid = clover_inrange_d2 && (clover_idx != 0) && `NOT_PINK(clover_r, clover_g, clover_b);
+assign sheep1_valid = sheep1_inrange_d2 && ~sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep1_idx != 1) && `NOT_PINK(sheep1_r, sheep1_g, sheep1_b);
+assign sheep2_valid = sheep2_inrange_d2 && sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep2_idx != 3) && `NOT_PINK(sheep2_r, sheep2_g, sheep2_b);
+assign sheepj1_valid = sheepj1_inrange_d2 && (player_state == PLAYER_JUMP) && (sheep_j1_idx != 0) && `NOT_PINK(sheepj1_r, sheepj1_g, sheepj1_b); 
 
 //Real Digital VGA to HDMI converter
 hdmi_tx_0 vga_to_hdmi (

@@ -52,7 +52,7 @@ module hdmi_text_controller_v1_0_AXI #
     output logic [3:0] bram_we, // write enable for bram
 
     output logic [C_S_AXI_DATA_WIDTH-1:0] color_regs [8], // specific color register to output
-    output logic [C_S_AXI_DATA_WIDTH-1:0] game_regs [17], // 0x80C to 0x81C
+    output logic [C_S_AXI_DATA_WIDTH-1:0] game_regs [35], // 0x80C to 0x82E
 
     // User ports ends
 
@@ -469,6 +469,24 @@ begin
         12'h81A: reg_data_out = game_regs[14];
         12'h81B: reg_data_out = game_regs[15];
         12'h81C: reg_data_out = game_regs[16];
+        12'h81D: reg_data_out = game_regs[17];
+        12'h81E: reg_data_out = game_regs[18];
+        12'h81F: reg_data_out = game_regs[19];
+        12'h820: reg_data_out = game_regs[20];
+        12'h821: reg_data_out = game_regs[21];
+        12'h822: reg_data_out = game_regs[22];
+        12'h823: reg_data_out = game_regs[23];
+        12'h824: reg_data_out = game_regs[24];
+        12'h825: reg_data_out = game_regs[25];
+        12'h826: reg_data_out = game_regs[26];
+        12'h827: reg_data_out = game_regs[27];
+        12'h828: reg_data_out = game_regs[28];
+        12'h829: reg_data_out = game_regs[29];
+        12'h82A: reg_data_out = game_regs[30];
+        12'h82B: reg_data_out = game_regs[31];
+        12'h82C: reg_data_out = game_regs[32];
+        12'h82D: reg_data_out = game_regs[33];
+        12'h82E: reg_data_out = game_regs[34];
         default: reg_data_out = 32'b0;
       endcase
     end
@@ -554,9 +572,9 @@ end
 // write logic for game registers
 always_ff @(posedge S_AXI_ACLK) begin
   if (S_AXI_ARESETN == 1'b0) begin
-    for (int i = 0; i < 17; i++) game_regs[i] <= 32'b0;
+    for (int i = 0; i < 35; i++) game_regs[i] <= 32'b0;
   end else begin
-    if (slv_reg_wren && (aw_word_addr >= 12'h80C) && (aw_word_addr <= 12'h81C)) begin
+    if (slv_reg_wren && (aw_word_addr >= 12'h80C) && (aw_word_addr <= 12'h82E)) begin
       for (byte_index = 0; byte_index <= 3; byte_index = byte_index + 1) begin
         if (S_AXI_WSTRB[byte_index] == 1) begin
           game_regs[aw_word_addr - 12'h80C][(byte_index*8) +: 8] <= S_AXI_WDATA[(byte_index*8) +: 8];

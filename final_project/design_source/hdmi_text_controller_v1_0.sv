@@ -68,7 +68,7 @@ logic [3:0] red, green, blue;
 logic reset_ah;
 logic [31:0] frame_count;
 logic sheep_use_frame2;
-logic [31:0] game_regs [17];
+logic [31:0] game_regs [35];
 
 
 // BRAM signals
@@ -84,24 +84,30 @@ logic [31:0] bram_color_out;
 
 // Sprites
 // address size calculated from COE memory depth and width
-logic [11:0] fence_addr;
+logic [11:0] fence_addr, fence2_addr, fence3_addr, fence4_addr;
 logic [10:0] clover_addr, moon_addr, sheep_j1_addr, sheep1_addr, sheep2_addr;
-logic [2:0] fence_idx, sheep_j1_idx, sheep1_idx, sheep2_idx; // palette index
+logic [2:0] fence_idx, fence2_idx, fence3_idx, fence4_idx, sheep_j1_idx, sheep1_idx, sheep2_idx; // palette index
 logic [1:0] clover_idx, moon_idx;
 
 logic [3:0] fence_r, fence_g, fence_b;
+logic [3:0] fence2_r, fence2_g, fence2_b;
+logic [3:0] fence3_r, fence3_g, fence3_b;
+logic [3:0] fence4_r, fence4_g, fence4_b;
 logic [3:0] clover_r, clover_g, clover_b;
 logic [3:0] moon_r, moon_g, moon_b;
 logic [3:0] sheep1_r, sheep1_g, sheep1_b;
 logic [3:0] sheep2_r, sheep2_g, sheep2_b;
 logic [3:0] sheepj1_r, sheepj1_g, sheepj1_b;
 
-logic moon_inrange, fence_inrange, clover_inrange, sheep1_inrange, sheep2_inrange, sheepj1_inrange;
-logic moon_inrange_d, fence_inrange_d, clover_inrange_d, sheep1_inrange_d, sheep2_inrange_d, sheepj1_inrange_d;
-logic moon_valid, fence_valid, clover_valid, sheep1_valid, sheep2_valid, sheepj1_valid;
+logic moon_inrange, fence_inrange, fence2_inrange, fence3_inrange, fence4_inrange, clover_inrange, sheep1_inrange, sheep2_inrange, sheepj1_inrange;
+logic moon_inrange_d, fence_inrange_d, fence2_inrange_d, fence3_inrange_d, fence4_inrange_d, clover_inrange_d, sheep1_inrange_d, sheep2_inrange_d, sheepj1_inrange_d;
+logic moon_valid, fence_valid, fence2_valid, fence3_valid, fence4_valid, clover_valid, sheep1_valid, sheep2_valid, sheepj1_valid;
 
 logic [9:0] local_x_moon, local_y_moon;
 logic [9:0] local_x_fence, local_y_fence;
+logic [9:0] local_x_fence2, local_y_fence2;
+logic [9:0] local_x_fence3, local_y_fence3;
+logic [9:0] local_x_fence4, local_y_fence4;
 logic [9:0] local_x_clover, local_y_clover;
 logic [9:0] local_x_sheep1, local_y_sheep1;
 logic [9:0] local_x_sheep2, local_y_sheep2;
@@ -136,6 +142,27 @@ wire [15:0] fence_scale_inv = game_regs[13][15:0]; // FENCE_SCALE_INV
 wire [9:0] clover_w_s = game_regs[14][9:0]; // CLOVER_W_S
 wire [9:0] clover_h_s = game_regs[15][9:0]; // CLOVER_H_S
 wire [15:0] clover_scale_inv = game_regs[16][15:0]; // CLOVER_SCALE_INV
+
+wire [9:0] fence2_x = game_regs[17][9:0];
+wire [9:0] fence2_y = game_regs[18][9:0];
+wire       fence2_active = game_regs[19][0];
+wire [9:0] fence2_w_s = game_regs[20][9:0];
+wire [9:0] fence2_h_s = game_regs[21][9:0];
+wire [15:0] fence2_scale_inv = game_regs[22][15:0];
+
+wire [9:0] fence3_x = game_regs[23][9:0];
+wire [9:0] fence3_y = game_regs[24][9:0];
+wire       fence3_active = game_regs[25][0];
+wire [9:0] fence3_w_s = game_regs[26][9:0];
+wire [9:0] fence3_h_s = game_regs[27][9:0];
+wire [15:0] fence3_scale_inv = game_regs[28][15:0];
+
+wire [9:0] fence4_x = game_regs[29][9:0];
+wire [9:0] fence4_y = game_regs[30][9:0];
+wire       fence4_active = game_regs[31][0];
+wire [9:0] fence4_w_s = game_regs[32][9:0];
+wire [9:0] fence4_h_s = game_regs[33][9:0];
+wire [15:0] fence4_scale_inv = game_regs[34][15:0];
 
 // Instantiation of Axi Bus Interface AXI
 hdmi_text_controller_v1_0_AXI # ( 
@@ -204,32 +231,35 @@ vga_controller vga (
     .drawY(drawY)
 );    
 
-// @todo delays drawX, drawY, hsync, vsync by one cycle due to BRAM read latency
+// @todo delays drawX, drawY, hsync, vsync by two cycles due to pipelined math + BRAM read latency
 logic [11:0] char_index;
-(* use_dsp = "no" *) wire [11:0] char_index_mult = (drawY[9:4] * 80) + drawX[9:3];
-assign char_index = char_index_mult;
-assign color_addr = char_index[11:1]; 
 
-// Create 1 cycle delay using registers 
+// Create 1 cycle and 2 cycle delay using registers 
 logic [9:0] delayed_drawX, delayed_drawY;
 logic delayed_hsync, delayed_vsync, delayed_vde;
 
-always_ff @(posedge clk_25MHz) begin
-    delayed_drawX <= drawX;
-    delayed_drawY <= drawY;
-    delayed_hsync <= hsync;
-    delayed_vsync <= vsync;
-    delayed_vde <= vde;
-    moon_inrange_d <= moon_inrange;
-    fence_inrange_d <= fence_inrange;
-    clover_inrange_d <= clover_inrange;
-    sheep1_inrange_d <= sheep1_inrange;
-    sheep2_inrange_d <= sheep2_inrange;
-    sheepj1_inrange_d <= sheepj1_inrange;
-end
+logic [9:0] delayed2_drawX, delayed2_drawY;
+logic delayed2_hsync, delayed2_vsync, delayed2_vde;
+
+logic moon_inrange_d2, fence_inrange_d2, fence2_inrange_d2, fence3_inrange_d2, fence4_inrange_d2, clover_inrange_d2;
+logic sheep1_inrange_d2, sheep2_inrange_d2, sheepj1_inrange_d2;
+
+logic [15:0] fence_y_unscaled_reg, fence_x_unscaled_reg;
+logic [15:0] fence2_y_unscaled_reg, fence2_x_unscaled_reg;
+logic [15:0] fence3_y_unscaled_reg, fence3_x_unscaled_reg;
+logic [15:0] fence4_y_unscaled_reg, fence4_x_unscaled_reg;
+logic [15:0] clover_y_unscaled_reg, clover_x_unscaled_reg;
+
+logic [9:0] local_x_moon_reg, local_y_moon_reg;
+logic [9:0] local_x_sheep1_reg, local_y_sheep1_reg;
+logic [9:0] local_x_sheep2_reg, local_y_sheep2_reg;
+logic [9:0] local_x_sheepj1_reg, local_y_sheepj1_reg;
 
     assign moon_inrange = (drawX >= MOON_X) && (drawX < (MOON_X + MOON_W)) && (drawY >= MOON_Y) && (drawY < (MOON_Y + MOON_H));
     assign fence_inrange = fence_active && (drawX >= fence_x) && (drawX < (fence_x + fence_w_s)) && (drawY >= fence_y) && (drawY < (fence_y + fence_h_s));
+    assign fence2_inrange = fence2_active && (drawX >= fence2_x) && (drawX < (fence2_x + fence2_w_s)) && (drawY >= fence2_y) && (drawY < (fence2_y + fence2_h_s));
+    assign fence3_inrange = fence3_active && (drawX >= fence3_x) && (drawX < (fence3_x + fence3_w_s)) && (drawY >= fence3_y) && (drawY < (fence3_y + fence3_h_s));
+    assign fence4_inrange = fence4_active && (drawX >= fence4_x) && (drawX < (fence4_x + fence4_w_s)) && (drawY >= fence4_y) && (drawY < (fence4_y + fence4_h_s));
     assign clover_inrange = clover_active && (drawX >= clover_x) && (drawX < (clover_x + clover_w_s)) && (drawY >= clover_y) && (drawY < (clover_y + clover_h_s));
     assign sheep1_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
     assign sheep2_inrange = player_visible && (drawX >= player_x) && (drawX < (player_x + SHEEP_W)) && (drawY >= player_y) && (drawY < (player_y + SHEEP_H));
@@ -239,6 +269,12 @@ end
     assign local_y_moon = drawY - MOON_Y;
     assign local_x_fence = drawX - fence_x;
     assign local_y_fence = drawY - fence_y;
+    assign local_x_fence2 = drawX - fence2_x;
+    assign local_y_fence2 = drawY - fence2_y;
+    assign local_x_fence3 = drawX - fence3_x;
+    assign local_y_fence3 = drawY - fence3_y;
+    assign local_x_fence4 = drawX - fence4_x;
+    assign local_y_fence4 = drawY - fence4_y;
     assign local_x_clover = drawX - clover_x;
     assign local_y_clover = drawY - clover_y;
     assign local_x_sheep1 = drawX - player_x;
@@ -248,44 +284,119 @@ end
     assign local_x_sheepj1 = drawX - player_x;
     assign local_y_sheepj1 = drawY - player_y;
 
-    (* use_dsp = "no" *) wire [11:0] moon_addr_mult = (local_y_moon * MOON_W) + local_x_moon;
-    assign moon_addr = (moon_inrange) ? moon_addr_mult : 11'd0;
+(* use_dsp = "no" *) wire [11:0] char_index_mult = (delayed_drawY[9:4] * 80) + delayed_drawX[9:3];
+assign char_index = char_index_mult;
+assign color_addr = char_index[11:1];
 
-    // 2.5D Scaling logic for obstacles using LUT multipliers
     (* use_dsp = "no" *) wire [31:0] fence_y_mult = local_y_fence * fence_scale_inv;
     (* use_dsp = "no" *) wire [31:0] fence_x_mult = local_x_fence * fence_scale_inv;
-    wire [15:0] fence_y_unscaled = fence_y_mult[23:8];
-    wire [15:0] fence_x_unscaled = fence_x_mult[23:8];
+
+    (* use_dsp = "no" *) wire [31:0] fence2_y_mult = local_y_fence2 * fence2_scale_inv;
+    (* use_dsp = "no" *) wire [31:0] fence2_x_mult = local_x_fence2 * fence2_scale_inv;
+
+    (* use_dsp = "no" *) wire [31:0] fence3_y_mult = local_y_fence3 * fence3_scale_inv;
+    (* use_dsp = "no" *) wire [31:0] fence3_x_mult = local_x_fence3 * fence3_scale_inv;
+
+    (* use_dsp = "no" *) wire [31:0] fence4_y_mult = local_y_fence4 * fence4_scale_inv;
+    (* use_dsp = "no" *) wire [31:0] fence4_x_mult = local_x_fence4 * fence4_scale_inv;
 
     (* use_dsp = "no" *) wire [31:0] clover_y_mult = local_y_clover * clover_scale_inv;
     (* use_dsp = "no" *) wire [31:0] clover_x_mult = local_x_clover * clover_scale_inv;
-    wire [15:0] clover_y_unscaled = clover_y_mult[23:8];
-    wire [15:0] clover_x_unscaled = clover_x_mult[23:8];
 
-    (* use_dsp = "no" *) wire [31:0] fence_addr_mult = fence_y_unscaled * FENCE_W;
-    assign fence_addr = (fence_inrange) ? (fence_addr_mult[11:0] + fence_x_unscaled[11:0]) : 12'd0;
+always_ff @(posedge clk_25MHz) begin
+    // Stage 1
+    delayed_drawX <= drawX;
+    delayed_drawY <= drawY;
+    delayed_hsync <= hsync;
+    delayed_vsync <= vsync;
+    delayed_vde <= vde;
+    moon_inrange_d <= moon_inrange;
+    fence_inrange_d <= fence_inrange;
+    fence2_inrange_d <= fence2_inrange;
+    fence3_inrange_d <= fence3_inrange;
+    fence4_inrange_d <= fence4_inrange;
+    clover_inrange_d <= clover_inrange;
+    sheep1_inrange_d <= sheep1_inrange;
+    sheep2_inrange_d <= sheep2_inrange;
+    sheepj1_inrange_d <= sheepj1_inrange;
     
-    (* use_dsp = "no" *) wire [31:0] clover_addr_mult = clover_y_unscaled * CLOVER_W;
-    assign clover_addr = (clover_inrange) ? (clover_addr_mult[10:0] + clover_x_unscaled[10:0]) : 11'd0;
+    fence_y_unscaled_reg <= fence_y_mult[23:8];
+    fence_x_unscaled_reg <= fence_x_mult[23:8];
+    fence2_y_unscaled_reg <= fence2_y_mult[23:8];
+    fence2_x_unscaled_reg <= fence2_x_mult[23:8];
+    fence3_y_unscaled_reg <= fence3_y_mult[23:8];
+    fence3_x_unscaled_reg <= fence3_x_mult[23:8];
+    fence4_y_unscaled_reg <= fence4_y_mult[23:8];
+    fence4_x_unscaled_reg <= fence4_x_mult[23:8];
+    clover_y_unscaled_reg <= clover_y_mult[23:8];
+    clover_x_unscaled_reg <= clover_x_mult[23:8];
     
-    (* use_dsp = "no" *) wire [31:0] sheep1_addr_mult = local_y_sheep1 * SHEEP_W;
-    assign sheep1_addr = (sheep1_inrange) ? (sheep1_addr_mult[10:0] + local_x_sheep1) : 11'd0;
+    local_x_moon_reg <= local_x_moon;
+    local_y_moon_reg <= local_y_moon;
+    local_x_sheep1_reg <= local_x_sheep1;
+    local_y_sheep1_reg <= local_y_sheep1;
+    local_x_sheep2_reg <= local_x_sheep2;
+    local_y_sheep2_reg <= local_y_sheep2;
+    local_x_sheepj1_reg <= local_x_sheepj1;
+    local_y_sheepj1_reg <= local_y_sheepj1;
+
+    // Stage 2
+    delayed2_drawX <= delayed_drawX;
+    delayed2_drawY <= delayed_drawY;
+    delayed2_hsync <= delayed_hsync;
+    delayed2_vsync <= delayed_vsync;
+    delayed2_vde <= delayed_vde;
     
-    (* use_dsp = "no" *) wire [31:0] sheep2_addr_mult = local_y_sheep2 * SHEEP_W;
-    assign sheep2_addr = (sheep2_inrange) ? (sheep2_addr_mult[10:0] + local_x_sheep2) : 11'd0;
+    moon_inrange_d2 <= moon_inrange_d;
+    fence_inrange_d2 <= fence_inrange_d;
+    fence2_inrange_d2 <= fence2_inrange_d;
+    fence3_inrange_d2 <= fence3_inrange_d;
+    fence4_inrange_d2 <= fence4_inrange_d;
+    clover_inrange_d2 <= clover_inrange_d;
+    sheep1_inrange_d2 <= sheep1_inrange_d;
+    sheep2_inrange_d2 <= sheep2_inrange_d;
+    sheepj1_inrange_d2 <= sheepj1_inrange_d;
+end
+
+    (* use_dsp = "no" *) wire [31:0] moon_addr_mult = (local_y_moon_reg * MOON_W) + local_x_moon_reg;
+    assign moon_addr = (moon_inrange_d) ? moon_addr_mult[10:0] : 11'd0;
+
+    (* use_dsp = "no" *) wire [31:0] fence_addr_mult = fence_y_unscaled_reg * FENCE_W;
+    assign fence_addr = (fence_inrange_d) ? (fence_addr_mult[11:0] + fence_x_unscaled_reg[11:0]) : 12'd0;
     
-    (* use_dsp = "no" *) wire [31:0] sheepj1_addr_mult = local_y_sheepj1 * SHEEP_W;
-    assign sheep_j1_addr = (sheepj1_inrange) ? (sheepj1_addr_mult[10:0] + local_x_sheepj1) : 11'd0;
+    (* use_dsp = "no" *) wire [31:0] fence2_addr_mult = fence2_y_unscaled_reg * FENCE_W;
+    assign fence2_addr = (fence2_inrange_d) ? (fence2_addr_mult[11:0] + fence2_x_unscaled_reg[11:0]) : 12'd0;
+
+    (* use_dsp = "no" *) wire [31:0] fence3_addr_mult = fence3_y_unscaled_reg * FENCE_W;
+    assign fence3_addr = (fence3_inrange_d) ? (fence3_addr_mult[11:0] + fence3_x_unscaled_reg[11:0]) : 12'd0;
+
+    (* use_dsp = "no" *) wire [31:0] fence4_addr_mult = fence4_y_unscaled_reg * FENCE_W;
+    assign fence4_addr = (fence4_inrange_d) ? (fence4_addr_mult[11:0] + fence4_x_unscaled_reg[11:0]) : 12'd0;
+    
+    (* use_dsp = "no" *) wire [31:0] clover_addr_mult = clover_y_unscaled_reg * CLOVER_W;
+    assign clover_addr = (clover_inrange_d) ? (clover_addr_mult[10:0] + clover_x_unscaled_reg[10:0]) : 11'd0;
+    
+    (* use_dsp = "no" *) wire [31:0] sheep1_addr_mult = local_y_sheep1_reg * SHEEP_W;
+    assign sheep1_addr = (sheep1_inrange_d) ? (sheep1_addr_mult[10:0] + local_x_sheep1_reg) : 11'd0;
+    
+    (* use_dsp = "no" *) wire [31:0] sheep2_addr_mult = local_y_sheep2_reg * SHEEP_W;
+    assign sheep2_addr = (sheep2_inrange_d) ? (sheep2_addr_mult[10:0] + local_x_sheep2_reg) : 11'd0;
+    
+    (* use_dsp = "no" *) wire [31:0] sheepj1_addr_mult = local_y_sheepj1_reg * SHEEP_W;
+    assign sheep_j1_addr = (sheepj1_inrange_d) ? (sheepj1_addr_mult[10:0] + local_x_sheepj1_reg) : 11'd0;
 
 // Transparency key: index 0 is reserved for the background in all palettes.
 // frame_count increments at v-sync; bit[3] toggles every 8 frames => 7.5 swaps/sec at 60 Hz.
 assign sheep_use_frame2 = frame_count[3];
-assign moon_valid = moon_inrange_d && (moon_idx != 0);
-assign fence_valid = fence_inrange_d && (fence_idx != 1);
-assign clover_valid = clover_inrange_d && (clover_idx != 0);
-assign sheep1_valid = sheep1_inrange_d && ~sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep1_idx != 1);
-assign sheep2_valid = sheep2_inrange_d && sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep2_idx != 3);
-assign sheepj1_valid = sheepj1_inrange_d && (player_state == PLAYER_JUMP) && (sheep_j1_idx != 0); 
+assign moon_valid = moon_inrange_d2 && (moon_idx != 0);
+assign fence_valid = fence_inrange_d2 && (fence_idx != 1);
+assign fence2_valid = fence2_inrange_d2 && (fence2_idx != 1);
+assign fence3_valid = fence3_inrange_d2 && (fence3_idx != 1);
+assign fence4_valid = fence4_inrange_d2 && (fence4_idx != 1);
+assign clover_valid = clover_inrange_d2 && (clover_idx != 0);
+assign sheep1_valid = sheep1_inrange_d2 && ~sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep1_idx != 1);
+assign sheep2_valid = sheep2_inrange_d2 && sheep_use_frame2 && (player_state != PLAYER_JUMP) && (sheep2_idx != 3);
+assign sheepj1_valid = sheepj1_inrange_d2 && (player_state == PLAYER_JUMP) && (sheep_j1_idx != 0); 
 
 //Real Digital VGA to HDMI converter
 hdmi_tx_0 vga_to_hdmi (
@@ -298,9 +409,9 @@ hdmi_tx_0 vga_to_hdmi (
     .red(red),
     .green(green),
     .blue(blue),
-    .hsync(delayed_hsync),
-    .vsync(delayed_vsync),
-    .vde(delayed_vde),
+    .hsync(delayed2_hsync),
+    .vsync(delayed2_vsync),
+    .vde(delayed2_vde),
         
     //aux Data (unused)
     .aux0_din(4'b0),
@@ -317,9 +428,9 @@ hdmi_tx_0 vga_to_hdmi (
 
 // Color mapper
 color_mapper color_instance (
-    .DrawX(delayed_drawX),
-    .DrawY(delayed_drawY),
-    .vde(delayed_vde),
+    .DrawX(delayed2_drawX),
+    .DrawY(delayed2_drawY),
+    .vde(delayed2_vde),
     .frame_count(frame_count),
     .char_data(bram_color_out),
     .color_regs(color_regs), // from the AXI module
@@ -332,6 +443,18 @@ color_mapper color_instance (
     .fence_r(fence_r),
     .fence_g(fence_g),
     .fence_b(fence_b),
+    .fence2_valid(fence2_valid),
+    .fence2_r(fence2_r),
+    .fence2_g(fence2_g),
+    .fence2_b(fence2_b),
+    .fence3_valid(fence3_valid),
+    .fence3_r(fence3_r),
+    .fence3_g(fence3_g),
+    .fence3_b(fence3_b),
+    .fence4_valid(fence4_valid),
+    .fence4_r(fence4_r),
+    .fence4_g(fence4_g),
+    .fence4_b(fence4_b),
     .clover_valid(clover_valid),
     .clover_r(clover_r),
     .clover_g(clover_g),
@@ -382,6 +505,10 @@ fence_rom fence_rom_inst (
     .ena(1'b1)
 );
 
+fence_rom fence2_rom_inst (.clka(clk_25MHz), .addra(fence2_addr), .douta(fence2_idx), .ena(1'b1));
+fence_rom fence3_rom_inst (.clka(clk_25MHz), .addra(fence3_addr), .douta(fence3_idx), .ena(1'b1));
+fence_rom fence4_rom_inst (.clka(clk_25MHz), .addra(fence4_addr), .douta(fence4_idx), .ena(1'b1));
+
 clover_rom clover_rom_inst (
     .clka(clk_25MHz), // pixel clock
     .addra(clover_addr),
@@ -423,6 +550,10 @@ fence_palette fence_palette_inst (
     .green(fence_g),
     .blue(fence_b)
 );
+
+fence_palette fence2_palette_inst (.index(fence2_idx), .red(fence2_r), .green(fence2_g), .blue(fence2_b));
+fence_palette fence3_palette_inst (.index(fence3_idx), .red(fence3_r), .green(fence3_g), .blue(fence3_b));
+fence_palette fence4_palette_inst (.index(fence4_idx), .red(fence4_r), .green(fence4_g), .blue(fence4_b));
 
 clover_palette clover_palette_inst (
     .index(clover_idx),

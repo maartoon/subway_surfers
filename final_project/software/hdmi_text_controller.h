@@ -62,6 +62,28 @@ struct TEXT_HDMI_STRUCT {
 	uint32_t            CLOVER_W_S;    // 0x81A
 	uint32_t            CLOVER_H_S;    // 0x81B
 	uint32_t            CLOVER_SCALE_INV; // 0x81C
+    
+    // New registers
+    uint32_t FENCE2_X;      // 0x81D
+    uint32_t FENCE2_Y;      // 0x81E
+    uint32_t FENCE2_VIS;    // 0x81F
+    uint32_t FENCE2_W_S;    // 0x820
+    uint32_t FENCE2_H_S;    // 0x821
+    uint32_t FENCE2_SCALE_INV; // 0x822
+    
+    uint32_t FENCE3_X;      // 0x823
+    uint32_t FENCE3_Y;      // 0x824
+    uint32_t FENCE3_VIS;    // 0x825
+    uint32_t FENCE3_W_S;    // 0x826
+    uint32_t FENCE3_H_S;    // 0x827
+    uint32_t FENCE3_SCALE_INV; // 0x828
+
+    uint32_t FENCE4_X;      // 0x829
+    uint32_t FENCE4_Y;      // 0x82A
+    uint32_t FENCE4_VIS;    // 0x82B
+    uint32_t FENCE4_W_S;    // 0x82C
+    uint32_t FENCE4_H_S;    // 0x82D
+    uint32_t FENCE4_SCALE_INV; // 0x82E
 };
 
 struct COLOR{

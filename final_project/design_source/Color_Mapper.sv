@@ -26,6 +26,12 @@ module  color_mapper (
     input logic [3:0] moon_r, moon_g, moon_b,
     input logic fence_valid,
     input logic [3:0] fence_r, fence_g, fence_b,
+    input logic fence2_valid,
+    input logic [3:0] fence2_r, fence2_g, fence2_b,
+    input logic fence3_valid,
+    input logic [3:0] fence3_r, fence3_g, fence3_b,
+    input logic fence4_valid,
+    input logic [3:0] fence4_r, fence4_g, fence4_b,
     input logic clover_valid,
     input logic [3:0] clover_r, clover_g, clover_b,
     input logic sheep1_valid,
@@ -140,6 +146,7 @@ module  color_mapper (
     logic [9:0] ground_line_phase;
     localparam logic [9:0] HORIZON_Y = 10'd160;
     logic [9:0] perspective_y;
+    logic [9:0] scroll_anim;
 
     // Sparse fixed star coordinates to avoid patterned/line artifacts.
     assign sky_star_on =
@@ -187,12 +194,14 @@ module  color_mapper (
                         (DrawX == lane_mark_2) || (DrawX == lane_mark_2 + 10'd1));
 
         // Dashed lane markers moving toward the viewer (down the screen) with perspective
-        dash_phase = perspective_y[5:0] - frame_count[5:0];
+        scroll_anim = {1'b0, frame_count[7:0], 1'b0}; // 2x speed multiplier
+        
+        dash_phase = perspective_y[5:0] - scroll_anim[5:0];
         stripe_on = (dash_phase < 6'd32);
 
         // Grass and ground lines
-        grass_phase = DrawY[5:0] + frame_count[4:0];
-        ground_line_phase = (DrawY + frame_count[5:0]) & 10'h03F;
+        grass_phase = perspective_y[5:0] - scroll_anim[5:0];
+        ground_line_phase = (perspective_y - scroll_anim) & 10'h03F;
         ground_line_on = (DrawY > HORIZON_Y) && (ground_line_phase < (row_depth >> 4));
     end
 
@@ -240,9 +249,9 @@ module  color_mapper (
 
         // Thin horizon blend helps avoid the hard split.
         if ((DrawY >= (HORIZON_Y - 10'd2)) && (DrawY <= (HORIZON_Y + 10'd2))) begin
-            env_r = 4'h7;
-            env_g = 4'h5;
-            env_b = 4'h4;
+            env_r = 4'h0;
+            env_g = 4'h2;
+            env_b = 4'h6;
         end
     end
 
@@ -270,6 +279,21 @@ module  color_mapper (
                 Red = fence_r;
                 Green = fence_g;
                 Blue = fence_b;
+            end
+            if (fence2_valid) begin
+                Red = fence2_r;
+                Green = fence2_g;
+                Blue = fence2_b;
+            end
+            if (fence3_valid) begin
+                Red = fence3_r;
+                Green = fence3_g;
+                Blue = fence3_b;
+            end
+            if (fence4_valid) begin
+                Red = fence4_r;
+                Green = fence4_g;
+                Blue = fence4_b;
             end
             if (clover_valid) begin
                 Red = clover_r;

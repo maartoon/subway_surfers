@@ -45,8 +45,8 @@ static void calc_scale(int y_pos, int base_w, int base_h, int *w_s, int *h_s, in
     int row_depth = y_pos - HORIZON_Y;
     if (row_depth < 0) row_depth = 0;
     
-    // Scale quadratically/linearly to simulate perspective: 15/256 at horizon, 465/256 at bottom
-    int scale_256 = 15 + (450 * row_depth) / 320;
+    // Scale quadratically/linearly to simulate perspective: 15/256 at horizon, 615/256 at bottom
+    int scale_256 = 15 + (600 * row_depth) / 320;
     if (scale_256 < 5) scale_256 = 5; 
     
     *w_s = (base_w * scale_256) >> 8;
@@ -58,7 +58,7 @@ static int get_speed_fp(int y_pos) {
     int row_depth = y_pos - HORIZON_Y;
     if (row_depth < 0) row_depth = 0;
     // Quadratic perspective speed: speed = base + (row_depth^2) / factor
-    int speed_fp = 64 + (row_depth * row_depth) / 100;
+    int speed_fp = 160 + (row_depth * row_depth) / 25;
     return speed_fp;
 }
 
@@ -132,6 +132,10 @@ static void initialize_game_registers(void) {
 	hdmi_ctrl->FENCE_W_S = FENCE_W;
 	hdmi_ctrl->FENCE_H_S = FENCE_H;
 	hdmi_ctrl->FENCE_SCALE_INV = 256;
+	hdmi_ctrl->FENCE2_VIS = 0;
+	hdmi_ctrl->FENCE3_VIS = 0;
+	hdmi_ctrl->FENCE4_VIS = 0;
+	
 	hdmi_ctrl->CLOVER_W_S = CLOVER_W;
 	hdmi_ctrl->CLOVER_H_S = CLOVER_H;
 	hdmi_ctrl->CLOVER_SCALE_INV = 256;
@@ -199,11 +203,13 @@ int main() {
 	int player_lane = 1;
 	int player_state = PLAYER_RUN;
 	int jump_timer = 0;
+	int jump_switches = 0;
+	int lane_switch_cooldown = 0;
 	int score = 0;
 	
-	int obs_active = 0;
-	int obs_lane = 0;
-	int obs_y_fp = 0;
+	int current_x = get_lane_x(1, PLAYER_BASE_Y, PLAYER_SPRITE_W);
+	
+	struct { int active; int lane; int y_fp; } fences[4] = {{0}};
 
 	int pwr_active = 0;
 	int pwr_lane = 0;
@@ -296,24 +302,38 @@ int main() {
 						player_lane = 1;
 						player_state = PLAYER_RUN;
 						jump_timer = 0;
+						jump_switches = 0;
+						lane_switch_cooldown = 0;
+						current_x = get_lane_x(1, PLAYER_BASE_Y, PLAYER_SPRITE_W);
 						score = 0;
-						obs_active = 0;
+						for(int i=0; i<4; i++) fences[i].active = 0;
 						pwr_active = 0;
 						srand(hdmi_ctrl->FRAME_COUNT);
 						xil_printf("MENU -> PLAYING\n");
 						textHDMIColorClr();
 					}
 				} else if (game_state == GAME_STATE_PLAYING) {
-					if (left_edge && player_lane > 0) {
-						player_lane--;
+				    if (lane_switch_cooldown > 0) lane_switch_cooldown--;
+				    
+					if (left_edge && player_lane > 0 && lane_switch_cooldown == 0) {
+					    if (player_state != PLAYER_JUMP || jump_switches < 1) {
+						    player_lane--;
+						    lane_switch_cooldown = 15; // 15 frame cooldown
+						    if (player_state == PLAYER_JUMP) jump_switches++;
+						}
 					}
-					if (right_edge && player_lane < (NUM_LANES - 1)) {
-						player_lane++;
+					if (right_edge && player_lane < (NUM_LANES - 1) && lane_switch_cooldown == 0) {
+					    if (player_state != PLAYER_JUMP || jump_switches < 1) {
+						    player_lane++;
+						    lane_switch_cooldown = 15; // 15 frame cooldown
+						    if (player_state == PLAYER_JUMP) jump_switches++;
+						}
 					}
 
 					if (jump_edge && player_state == PLAYER_RUN) {
 						player_state = PLAYER_JUMP;
-						jump_timer = 45;
+						jump_timer = 24; // 24 frames for asymmetric jump
+						jump_switches = 0;
 					}
 
 					if (player_state == PLAYER_JUMP) {
@@ -328,44 +348,116 @@ int main() {
 						player_state = PLAYER_RUN;
 					}
 
-					player_y = PLAYER_BASE_Y;
 					if (player_state == PLAYER_JUMP) {
-						player_y = PLAYER_BASE_Y - PLAYER_JUMP_HEIGHT;
+					    // Asymmetric jump: fast ascent (10 frames), softer descent (14 frames)
+					    int h;
+					    int t = 24 - jump_timer; // 0 to 24
+					    if (t <= 10) {
+					        int inv = 10 - t;
+					        h = PLAYER_JUMP_HEIGHT - (PLAYER_JUMP_HEIGHT * inv * inv) / 100;
+					    } else {
+					        int dt = t - 10;
+					        h = PLAYER_JUMP_HEIGHT - (PLAYER_JUMP_HEIGHT * dt * dt) / 196;
+					    }
+						player_y = PLAYER_BASE_Y - h;
+					} else {
+					    player_y = PLAYER_BASE_Y;
+					}
+					
+					// Dash animation for lane switching ("whip" / ease-out effect)
+					int target_x = get_lane_x(player_lane, PLAYER_BASE_Y, PLAYER_SPRITE_W);
+					int dx = target_x - current_x;
+					if (dx != 0) {
+					    int step = dx / 4; // Snappy ease-out fraction
+					    if (step == 0) step = (dx > 0) ? 4 : -4; // Minimum speed
+					    
+					    int abs_dx = (dx > 0) ? dx : -dx;
+					    int abs_step = (step > 0) ? step : -step;
+					    
+					    if (abs_dx <= abs_step) current_x = target_x;
+					    else current_x += step;
 					}
 
 					// Obstacle logic
-					if (!obs_active) {
-						obs_lane = rand() % NUM_LANES;
-						obs_y_fp = HORIZON_Y << 8;
-						obs_active = 1;
+					int free_count = 0;
+					for (int i=0; i<4; i++) if (!fences[i].active) free_count++;
+					
+					if (free_count > 0 && (rand() % 40) == 0) { 
+					    int pattern = rand() % 10;
+					    if (pattern < 7 && free_count >= 1) { // single fence
+					        for (int i=0; i<4; i++) {
+					            if (!fences[i].active) {
+					                fences[i].lane = rand() % NUM_LANES;
+					                fences[i].y_fp = HORIZON_Y << 8;
+					                fences[i].active = 1;
+					                break;
+					            }
+					        }
+					    } else if (pattern >= 7 && free_count >= 3) { // wall of three
+					        int l = 0;
+					        for (int i=0; i<4; i++) {
+					            if (!fences[i].active && l < 3) {
+					                fences[i].lane = l++;
+					                fences[i].y_fp = HORIZON_Y << 8;
+					                fences[i].active = 1;
+					            }
+					        }
+					    }
 					}
-					if (obs_active) {
-						obs_y_fp += get_speed_fp(obs_y_fp >> 8);
-						int obs_y = obs_y_fp >> 8;
-						if (obs_y > 480) {
-							obs_active = 0;
-							score += 10;
-						} else {
-							int w_s, h_s, scale_inv;
-							calc_scale(obs_y, FENCE_W, FENCE_H, &w_s, &h_s, &scale_inv);
-							hdmi_ctrl->FENCE_X = get_lane_x(obs_lane, obs_y, w_s);
-							hdmi_ctrl->FENCE_Y = obs_y;
-							hdmi_ctrl->FENCE_W_S = w_s;
-							hdmi_ctrl->FENCE_H_S = h_s;
-							hdmi_ctrl->FENCE_SCALE_INV = scale_inv;
-							
-							if (check_collision(player_lane, player_state, obs_lane, obs_y, w_s, h_s, obs_active)) {
-								game_state = GAME_STATE_GAMEOVER;
-								hdmi_ctrl->GAME_CTRL = GAME_STATE_GAMEOVER;
-								player_state = 3; // dead
-							}
-						}
+					
+					for (int i=0; i<4; i++) {
+					    if (fences[i].active) {
+						    fences[i].y_fp += get_speed_fp(fences[i].y_fp >> 8);
+						    int obs_y = fences[i].y_fp >> 8;
+						    if (obs_y > 480) {
+							    fences[i].active = 0;
+							    score += 10;
+						    } else {
+							    int w_s, h_s, scale_inv;
+							    calc_scale(obs_y, FENCE_W, FENCE_H, &w_s, &h_s, &scale_inv);
+							    if (i == 0) {
+							        hdmi_ctrl->FENCE_X = get_lane_x(fences[i].lane, obs_y, w_s);
+							        hdmi_ctrl->FENCE_Y = obs_y;
+							        hdmi_ctrl->FENCE_W_S = w_s;
+							        hdmi_ctrl->FENCE_H_S = h_s;
+							        hdmi_ctrl->FENCE_SCALE_INV = scale_inv;
+							    } else if (i == 1) {
+							        hdmi_ctrl->FENCE2_X = get_lane_x(fences[i].lane, obs_y, w_s);
+							        hdmi_ctrl->FENCE2_Y = obs_y;
+							        hdmi_ctrl->FENCE2_W_S = w_s;
+							        hdmi_ctrl->FENCE2_H_S = h_s;
+							        hdmi_ctrl->FENCE2_SCALE_INV = scale_inv;
+							    } else if (i == 2) {
+							        hdmi_ctrl->FENCE3_X = get_lane_x(fences[i].lane, obs_y, w_s);
+							        hdmi_ctrl->FENCE3_Y = obs_y;
+							        hdmi_ctrl->FENCE3_W_S = w_s;
+							        hdmi_ctrl->FENCE3_H_S = h_s;
+							        hdmi_ctrl->FENCE3_SCALE_INV = scale_inv;
+							    } else if (i == 3) {
+							        hdmi_ctrl->FENCE4_X = get_lane_x(fences[i].lane, obs_y, w_s);
+							        hdmi_ctrl->FENCE4_Y = obs_y;
+							        hdmi_ctrl->FENCE4_W_S = w_s;
+							        hdmi_ctrl->FENCE4_H_S = h_s;
+							        hdmi_ctrl->FENCE4_SCALE_INV = scale_inv;
+							    }
+							    
+							    if (check_collision(player_lane, player_state, fences[i].lane, obs_y, w_s, h_s, fences[i].active)) {
+								    game_state = GAME_STATE_GAMEOVER;
+								    hdmi_ctrl->GAME_CTRL = GAME_STATE_GAMEOVER;
+								    player_state = 3; // dead
+							    }
+						    }
+					    }
 					}
 
 					// Clover logic
-					if (!pwr_active && (rand() % 200 == 0)) {
+					if (!pwr_active && (rand() % 60 == 0)) {
 						pwr_lane = rand() % NUM_LANES;
-						if (!obs_active || pwr_lane != obs_lane) {
+						int conflict = 0;
+						for (int i=0; i<4; i++) {
+						    if (fences[i].active && fences[i].lane == pwr_lane && fences[i].y_fp < (HORIZON_Y + 20) * 256) conflict = 1;
+						}
+						if (!conflict) {
 							pwr_y_fp = HORIZON_Y << 8;
 							pwr_active = 1;
 						}
@@ -393,10 +485,13 @@ int main() {
 
 					if (game_state == GAME_STATE_PLAYING) {
 						hdmi_ctrl->GAME_CTRL = GAME_STATE_PLAYING;
-						hdmi_ctrl->PLAYER_X = get_lane_x(player_lane, PLAYER_BASE_Y, PLAYER_SPRITE_W);
+						hdmi_ctrl->PLAYER_X = current_x;
 						hdmi_ctrl->PLAYER_Y = player_y;
-						hdmi_ctrl->PLAYER_STATE = player_state;
-						hdmi_ctrl->FENCE_VIS = obs_active;
+						hdmi_ctrl->PLAYER_STATE = (1 << 2) | player_state; // bit 2 is player_visible
+						hdmi_ctrl->FENCE_VIS = fences[0].active;
+						hdmi_ctrl->FENCE2_VIS = fences[1].active;
+						hdmi_ctrl->FENCE3_VIS = fences[2].active;
+						hdmi_ctrl->FENCE4_VIS = fences[3].active;
 						hdmi_ctrl->CLOVER_VIS = pwr_active;
 						hdmi_ctrl->SCORE = score;
 
@@ -419,6 +514,9 @@ int main() {
 						textHDMIDrawColorText("Press ENTER to start", 30, 16, 0, 10);
 						hdmi_ctrl->GAME_CTRL = GAME_STATE_MENU;
 						hdmi_ctrl->FENCE_VIS = 0;
+						hdmi_ctrl->FENCE2_VIS = 0;
+						hdmi_ctrl->FENCE3_VIS = 0;
+						hdmi_ctrl->FENCE4_VIS = 0;
 						hdmi_ctrl->CLOVER_VIS = 0;
 					}
 				}

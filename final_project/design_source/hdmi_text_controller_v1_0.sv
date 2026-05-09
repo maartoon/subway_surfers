@@ -155,8 +155,8 @@ wire [3:0] game_state = game_regs[0][3:0]; // GAME_CTRL
 wire       player_visible = (game_state == 4'd1);
 wire jump_audio_trigger = (player_state == PLAYER_JUMP) && (player_state_d != PLAYER_JUMP);
 wire crash_audio_trigger = (game_state == GAME_STATE_GAMEOVER) && (game_state_d != GAME_STATE_GAMEOVER);
-wire [15:0] selected_audio_sample = crash_audio_active ? crash_audio_sample : jump_audio_sample;
-wire selected_audio_active = crash_audio_active || jump_audio_active;
+wire [15:0] selected_audio_sample = crash_audio_active ? crash_audio_sample : 
+                                    jump_audio_active ? jump_audio_sample : 16'h0000;
 wire [15:0] selected_audio_unsigned = selected_audio_sample ^ 16'h8000;
 
 wire [9:0] fence_w_s = game_regs[11][9:0]; // FENCE_W_S
@@ -211,15 +211,13 @@ always_ff @(posedge axi_aclk) begin
         player_state_d <= player_state;
         game_state_d <= game_state;
 
-        if (selected_audio_active) begin
-            audio_pdm_accum <= {1'b0, audio_pdm_accum[15:0]} + {1'b0, selected_audio_unsigned};
-        end else begin
-            audio_pdm_accum <= 17'd0;
-        end
+        // Always accumulate to maintain 50% duty cycle when idle (silence)
+        // This prevents the amplifier from saturating due to sudden DC jumps
+        audio_pdm_accum <= {1'b0, audio_pdm_accum[15:0]} + {1'b0, selected_audio_unsigned};
     end
 end
 
-assign audio_pwm = selected_audio_active && audio_pdm_accum[16];
+assign audio_pwm = audio_pdm_accum[16];
 
 jump_audio_player jump_audio_player_inst (
     .clk(axi_aclk),

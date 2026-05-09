@@ -76,8 +76,9 @@ static int check_collision(int p_lane, int p_state, int o_lane, int o_y, int o_w
     return 0;
 }
 
-static int check_powerup(int p_lane, int p_state, int o_lane, int o_y, int o_w_s, int o_h_s, int o_active) {
+static int check_powerup(int p_lane, int p_state, int o_lane, int o_y, int o_w_s, int o_h_s, int o_active, int airborne) {
     if (!o_active) return 0;
+    if (airborne && p_state != PLAYER_JUMP) return 0;
     
     int depth_diff = o_y - PLAYER_BASE_Y;
     if (depth_diff < 0) depth_diff = -depth_diff;
@@ -86,6 +87,71 @@ static int check_powerup(int p_lane, int p_state, int o_lane, int o_y, int o_w_s
         return 1;
     }
     return 0;
+}
+
+static int get_airborne_y(int depth_y, int h_s) {
+	int y = depth_y - PLAYER_JUMP_HEIGHT - (h_s / 2);
+	if (y < HORIZON_Y) {
+		y = HORIZON_Y;
+	}
+	return y;
+}
+
+static void write_fence_slot(int slot, int x, int y, int w_s, int h_s, int scale_inv, int active) {
+	if (slot == 0) {
+		hdmi_ctrl->FENCE_X = x;
+		hdmi_ctrl->FENCE_Y = y;
+		hdmi_ctrl->FENCE_W_S = w_s;
+		hdmi_ctrl->FENCE_H_S = h_s;
+		hdmi_ctrl->FENCE_SCALE_INV = scale_inv;
+		hdmi_ctrl->FENCE_VIS = active;
+	} else if (slot == 1) {
+		hdmi_ctrl->FENCE2_X = x;
+		hdmi_ctrl->FENCE2_Y = y;
+		hdmi_ctrl->FENCE2_W_S = w_s;
+		hdmi_ctrl->FENCE2_H_S = h_s;
+		hdmi_ctrl->FENCE2_SCALE_INV = scale_inv;
+		hdmi_ctrl->FENCE2_VIS = active;
+	} else if (slot == 2) {
+		hdmi_ctrl->FENCE3_X = x;
+		hdmi_ctrl->FENCE3_Y = y;
+		hdmi_ctrl->FENCE3_W_S = w_s;
+		hdmi_ctrl->FENCE3_H_S = h_s;
+		hdmi_ctrl->FENCE3_SCALE_INV = scale_inv;
+		hdmi_ctrl->FENCE3_VIS = active;
+	} else {
+		hdmi_ctrl->FENCE4_X = x;
+		hdmi_ctrl->FENCE4_Y = y;
+		hdmi_ctrl->FENCE4_W_S = w_s;
+		hdmi_ctrl->FENCE4_H_S = h_s;
+		hdmi_ctrl->FENCE4_SCALE_INV = scale_inv;
+		hdmi_ctrl->FENCE4_VIS = active;
+	}
+}
+
+static void write_clover_slot(int slot, int x, int y, int w_s, int h_s, int scale_inv, int active) {
+	if (slot == 0) {
+		hdmi_ctrl->CLOVER_X = x;
+		hdmi_ctrl->CLOVER_Y = y;
+		hdmi_ctrl->CLOVER_W_S = w_s;
+		hdmi_ctrl->CLOVER_H_S = h_s;
+		hdmi_ctrl->CLOVER_SCALE_INV = scale_inv;
+		hdmi_ctrl->CLOVER_VIS = active;
+	} else if (slot == 1) {
+		hdmi_ctrl->CLOVER2_X = x;
+		hdmi_ctrl->CLOVER2_Y = y;
+		hdmi_ctrl->CLOVER2_W_S = w_s;
+		hdmi_ctrl->CLOVER2_H_S = h_s;
+		hdmi_ctrl->CLOVER2_SCALE_INV = scale_inv;
+		hdmi_ctrl->CLOVER2_VIS = active;
+	} else {
+		hdmi_ctrl->CLOVER3_X = x;
+		hdmi_ctrl->CLOVER3_Y = y;
+		hdmi_ctrl->CLOVER3_W_S = w_s;
+		hdmi_ctrl->CLOVER3_H_S = h_s;
+		hdmi_ctrl->CLOVER3_SCALE_INV = scale_inv;
+		hdmi_ctrl->CLOVER3_VIS = active;
+	}
 }
 
 static int report_has_key(const BOOT_KBD_REPORT *report, BYTE keycode) {
@@ -139,6 +205,14 @@ static void initialize_game_registers(void) {
 	hdmi_ctrl->CLOVER_W_S = CLOVER_W;
 	hdmi_ctrl->CLOVER_H_S = CLOVER_H;
 	hdmi_ctrl->CLOVER_SCALE_INV = 256;
+	hdmi_ctrl->CLOVER2_VIS = 0;
+	hdmi_ctrl->CLOVER2_W_S = CLOVER_W;
+	hdmi_ctrl->CLOVER2_H_S = CLOVER_H;
+	hdmi_ctrl->CLOVER2_SCALE_INV = 256;
+	hdmi_ctrl->CLOVER3_VIS = 0;
+	hdmi_ctrl->CLOVER3_W_S = CLOVER_W;
+	hdmi_ctrl->CLOVER3_H_S = CLOVER_H;
+	hdmi_ctrl->CLOVER3_SCALE_INV = 256;
 }
 
 BYTE GetDriverandReport() {
@@ -211,9 +285,7 @@ int main() {
 	
 	struct { int active; int lane; int y_fp; } fences[4] = {{0}};
 
-	int pwr_active = 0;
-	int pwr_lane = 0;
-	int pwr_y_fp = 0;
+	struct { int active; int lane; int y_fp; int airborne; } clovers[3] = {{0}};
 
 	initialize_game_registers();
 	textHDMIColorClr();
@@ -307,7 +379,7 @@ int main() {
 						current_x = get_lane_x(1, PLAYER_BASE_Y, PLAYER_SPRITE_W);
 						score = 0;
 						for(int i=0; i<4; i++) fences[i].active = 0;
-						pwr_active = 0;
+						for(int i=0; i<3; i++) clovers[i].active = 0;
 						srand(hdmi_ctrl->FRAME_COUNT);
 						xil_printf("MENU -> PLAYING\n");
 						textHDMIColorClr();
@@ -380,25 +452,40 @@ int main() {
 
 					// Obstacle logic
 					int free_count = 0;
+					int spawn_mod = 34 - (score / 120);
+					if (spawn_mod < 16) spawn_mod = 16;
 					for (int i=0; i<4; i++) if (!fences[i].active) free_count++;
-					
-					if (free_count > 0 && (rand() % 40) == 0) { 
-					    int pattern = rand() % 10;
-					    if (pattern < 7 && free_count >= 1) { // single fence
+
+					if (free_count > 0 && (rand() % spawn_mod) == 0) {
+					    int pattern = rand() % 12;
+					    int spawn_y_fp = HORIZON_Y << 8;
+					    if (pattern < 6 || free_count == 1) {
 					        for (int i=0; i<4; i++) {
 					            if (!fences[i].active) {
 					                fences[i].lane = rand() % NUM_LANES;
-					                fences[i].y_fp = HORIZON_Y << 8;
+					                fences[i].y_fp = spawn_y_fp;
 					                fences[i].active = 1;
 					                break;
 					            }
 					        }
-					    } else if (pattern >= 7 && free_count >= 3) { // wall of three
+					    } else if (pattern < 10 && free_count >= 2) {
+					        int lane_a = rand() % NUM_LANES;
+					        int lane_b = (lane_a + 1 + (rand() % 2)) % NUM_LANES;
+					        int spawned = 0;
+					        for (int i=0; i<4; i++) {
+					            if (!fences[i].active && spawned < 2) {
+					                fences[i].lane = (spawned == 0) ? lane_a : lane_b;
+					                fences[i].y_fp = spawn_y_fp;
+					                fences[i].active = 1;
+					                spawned++;
+					            }
+					        }
+					    } else if (free_count >= 3) {
 					        int l = 0;
 					        for (int i=0; i<4; i++) {
 					            if (!fences[i].active && l < 3) {
 					                fences[i].lane = l++;
-					                fences[i].y_fp = HORIZON_Y << 8;
+					                fences[i].y_fp = spawn_y_fp;
 					                fences[i].active = 1;
 					            }
 					        }
@@ -411,35 +498,12 @@ int main() {
 						    int obs_y = fences[i].y_fp >> 8;
 						    if (obs_y > 480) {
 							    fences[i].active = 0;
+							    write_fence_slot(i, 0, 0, FENCE_W, FENCE_H, 256, 0);
 							    score += 10;
 						    } else {
 							    int w_s, h_s, scale_inv;
 							    calc_scale(obs_y, FENCE_W, FENCE_H, &w_s, &h_s, &scale_inv);
-							    if (i == 0) {
-							        hdmi_ctrl->FENCE_X = get_lane_x(fences[i].lane, obs_y, w_s);
-							        hdmi_ctrl->FENCE_Y = obs_y;
-							        hdmi_ctrl->FENCE_W_S = w_s;
-							        hdmi_ctrl->FENCE_H_S = h_s;
-							        hdmi_ctrl->FENCE_SCALE_INV = scale_inv;
-							    } else if (i == 1) {
-							        hdmi_ctrl->FENCE2_X = get_lane_x(fences[i].lane, obs_y, w_s);
-							        hdmi_ctrl->FENCE2_Y = obs_y;
-							        hdmi_ctrl->FENCE2_W_S = w_s;
-							        hdmi_ctrl->FENCE2_H_S = h_s;
-							        hdmi_ctrl->FENCE2_SCALE_INV = scale_inv;
-							    } else if (i == 2) {
-							        hdmi_ctrl->FENCE3_X = get_lane_x(fences[i].lane, obs_y, w_s);
-							        hdmi_ctrl->FENCE3_Y = obs_y;
-							        hdmi_ctrl->FENCE3_W_S = w_s;
-							        hdmi_ctrl->FENCE3_H_S = h_s;
-							        hdmi_ctrl->FENCE3_SCALE_INV = scale_inv;
-							    } else if (i == 3) {
-							        hdmi_ctrl->FENCE4_X = get_lane_x(fences[i].lane, obs_y, w_s);
-							        hdmi_ctrl->FENCE4_Y = obs_y;
-							        hdmi_ctrl->FENCE4_W_S = w_s;
-							        hdmi_ctrl->FENCE4_H_S = h_s;
-							        hdmi_ctrl->FENCE4_SCALE_INV = scale_inv;
-							    }
+							    write_fence_slot(i, get_lane_x(fences[i].lane, obs_y, w_s), obs_y, w_s, h_s, scale_inv, 1);
 							    
 							    if (check_collision(player_lane, player_state, fences[i].lane, obs_y, w_s, h_s, fences[i].active)) {
 								    game_state = GAME_STATE_GAMEOVER;
@@ -450,35 +514,41 @@ int main() {
 					    }
 					}
 
-					// Clover logic
-					if (!pwr_active && (rand() % 60 == 0)) {
-						pwr_lane = rand() % NUM_LANES;
-						int conflict = 0;
-						for (int i=0; i<4; i++) {
-						    if (fences[i].active && fences[i].lane == pwr_lane && fences[i].y_fp < (HORIZON_Y + 20) * 256) conflict = 1;
-						}
-						if (!conflict) {
-							pwr_y_fp = HORIZON_Y << 8;
-							pwr_active = 1;
+					// Airborne clover logic
+					for (int i=0; i<3; i++) {
+						if (!clovers[i].active && (rand() % 75) == 0) {
+							int lane = rand() % NUM_LANES;
+							int conflict = 0;
+							for (int j=0; j<4; j++) {
+								if (fences[j].active && fences[j].lane == lane && fences[j].y_fp < (HORIZON_Y + 35) * 256) conflict = 1;
+							}
+							if (!conflict) {
+								clovers[i].lane = lane;
+								clovers[i].y_fp = HORIZON_Y << 8;
+								clovers[i].airborne = rand() & 1;
+								clovers[i].active = 1;
+							}
 						}
 					}
-					if (pwr_active) {
-						pwr_y_fp += get_speed_fp(pwr_y_fp >> 8);
-						int pwr_y = pwr_y_fp >> 8;
-						if (pwr_y > 480) {
-							pwr_active = 0;
-						} else {
+
+					for (int i=0; i<3; i++) {
+						if (clovers[i].active) {
+							clovers[i].y_fp += get_speed_fp(clovers[i].y_fp >> 8);
+							int pwr_y = clovers[i].y_fp >> 8;
 							int w_s, h_s, scale_inv;
 							calc_scale(pwr_y, CLOVER_W, CLOVER_H, &w_s, &h_s, &scale_inv);
-							hdmi_ctrl->CLOVER_X = get_lane_x(pwr_lane, pwr_y, w_s);
-							hdmi_ctrl->CLOVER_Y = pwr_y;
-							hdmi_ctrl->CLOVER_W_S = w_s;
-							hdmi_ctrl->CLOVER_H_S = h_s;
-							hdmi_ctrl->CLOVER_SCALE_INV = scale_inv;
+							int screen_y = clovers[i].airborne ? get_airborne_y(pwr_y, h_s) : pwr_y;
+							if (screen_y >= 480) {
+								clovers[i].active = 0;
+								write_clover_slot(i, 0, 0, CLOVER_W, CLOVER_H, 256, 0);
+							} else {
+								write_clover_slot(i, get_lane_x(clovers[i].lane, pwr_y, w_s), screen_y, w_s, h_s, scale_inv, 1);
 
-							if (check_powerup(player_lane, player_state, pwr_lane, pwr_y, w_s, h_s, pwr_active)) {
-								score += 50;
-								pwr_active = 0;
+								if (check_powerup(player_lane, player_state, clovers[i].lane, pwr_y, w_s, h_s, clovers[i].active, clovers[i].airborne)) {
+									score += 50;
+									clovers[i].active = 0;
+									write_clover_slot(i, 0, 0, CLOVER_W, CLOVER_H, 256, 0);
+								}
 							}
 						}
 					}
@@ -488,11 +558,6 @@ int main() {
 						hdmi_ctrl->PLAYER_X = current_x;
 						hdmi_ctrl->PLAYER_Y = player_y;
 						hdmi_ctrl->PLAYER_STATE = (1 << 2) | player_state; // bit 2 is player_visible
-						hdmi_ctrl->FENCE_VIS = fences[0].active;
-						hdmi_ctrl->FENCE2_VIS = fences[1].active;
-						hdmi_ctrl->FENCE3_VIS = fences[2].active;
-						hdmi_ctrl->FENCE4_VIS = fences[3].active;
-						hdmi_ctrl->CLOVER_VIS = pwr_active;
 						hdmi_ctrl->SCORE = score;
 
 						char score_str[32];
@@ -518,6 +583,8 @@ int main() {
 						hdmi_ctrl->FENCE3_VIS = 0;
 						hdmi_ctrl->FENCE4_VIS = 0;
 						hdmi_ctrl->CLOVER_VIS = 0;
+						hdmi_ctrl->CLOVER2_VIS = 0;
+						hdmi_ctrl->CLOVER3_VIS = 0;
 					}
 				}
 

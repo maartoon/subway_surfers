@@ -26,7 +26,7 @@
 #define PLAYER_SPRITE_W 40
 #define PLAYER_SPRITE_H 50
 #define FENCE_W 50
-#define FENCE_H 50
+#define FENCE_H 40
 #define CLOVER_W 40
 #define CLOVER_H 50
 
@@ -84,6 +84,20 @@ struct TEXT_HDMI_STRUCT {
     uint32_t FENCE4_W_S;    // 0x82C
     uint32_t FENCE4_H_S;    // 0x82D
     uint32_t FENCE4_SCALE_INV; // 0x82E
+
+    uint32_t CLOVER2_X;     // 0x82F
+    uint32_t CLOVER2_Y;     // 0x830
+    uint32_t CLOVER2_VIS;   // 0x831
+    uint32_t CLOVER2_W_S;   // 0x832
+    uint32_t CLOVER2_H_S;   // 0x833
+    uint32_t CLOVER2_SCALE_INV; // 0x834
+
+    uint32_t CLOVER3_X;     // 0x835
+    uint32_t CLOVER3_Y;     // 0x836
+    uint32_t CLOVER3_VIS;   // 0x837
+    uint32_t CLOVER3_W_S;   // 0x838
+    uint32_t CLOVER3_H_S;   // 0x839
+    uint32_t CLOVER3_SCALE_INV; // 0x83A
 };
 
 struct COLOR{

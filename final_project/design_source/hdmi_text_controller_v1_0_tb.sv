@@ -54,6 +54,7 @@ module hdmi_text_controller_tb();
     logic pixel_clk, pixel_hs, pixel_vs, pixel_vde;
     logic [9:0] drawX, drawY;
     logic [31:0] tb_read;
+    logic audio_pwm;
     
     //BMP writer related signals    
     localparam BMP_WIDTH  = 800;
@@ -93,7 +94,9 @@ module hdmi_text_controller_tb();
 		.axi_rdata(read_data),
 		.axi_rresp(read_resp),
 		.axi_rvalid(read_data_valid),
-		.axi_rready(read_data_ready)
+		.axi_rready(read_data_ready),
+
+		.audio_pwm(audio_pwm)
 	);
 	
 	initial begin: CLOCK_INITIALIZATION

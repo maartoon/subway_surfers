@@ -30,6 +30,8 @@ module mb_intro_top(
     output logic HDMI_0_tmds_clk_p,
     output logic [2:0]HDMI_0_tmds_data_n,
     output logic [2:0]HDMI_0_tmds_data_p,
+    output logic audio_pwm,
+    output logic audio_sd,
 
     //HEX displays
     output logic [7:0] hex_segA,
@@ -45,6 +47,7 @@ module mb_intro_top(
   assign hex_gridA = 4'hF;
   assign hex_segB = 8'hFF;
   assign hex_gridB = 4'hF;
+  assign audio_sd = 1'b1;
 
   mb_block mb_block_i
        (.clk_100MHz(clk_100MHz),
@@ -53,6 +56,7 @@ module mb_intro_top(
        .HDMI_0_tmds_clk_p(HDMI_0_tmds_clk_p),
        .HDMI_0_tmds_data_n(HDMI_0_tmds_data_n),
        .HDMI_0_tmds_data_p(HDMI_0_tmds_data_p),
+       .audio_pwm(audio_pwm),
        .gpio_usb_int_tri_i(gpio_usb_int_tri_i),
        .gpio_usb_keycode_0_tri_o(gpio_usb_keycode_0_tri_o),
        .gpio_usb_keycode_1_tri_o(gpio_usb_keycode_1_tri_o),

@@ -34,6 +34,10 @@ module  color_mapper (
     input logic [3:0] fence4_r, fence4_g, fence4_b,
     input logic clover_valid,
     input logic [3:0] clover_r, clover_g, clover_b,
+    input logic clover2_valid,
+    input logic [3:0] clover2_r, clover2_g, clover2_b,
+    input logic clover3_valid,
+    input logic [3:0] clover3_r, clover3_g, clover3_b,
     input logic sheep1_valid,
     input logic [3:0] sheep1_r, sheep1_g, sheep1_b,
     input logic sheep2_valid,
@@ -299,6 +303,16 @@ module  color_mapper (
                 Red = clover_r;
                 Green = clover_g;
                 Blue = clover_b;
+            end
+            if (clover2_valid) begin
+                Red = clover2_r;
+                Green = clover2_g;
+                Blue = clover2_b;
+            end
+            if (clover3_valid) begin
+                Red = clover3_r;
+                Green = clover3_g;
+                Blue = clover3_b;
             end
             if (sheep1_valid) begin
                 Red = sheep1_r;

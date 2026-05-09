@@ -52,7 +52,7 @@ module hdmi_text_controller_v1_0_AXI #
     output logic [3:0] bram_we, // write enable for bram
 
     output logic [C_S_AXI_DATA_WIDTH-1:0] color_regs [8], // specific color register to output
-    output logic [C_S_AXI_DATA_WIDTH-1:0] game_regs [35], // 0x80C to 0x82E
+    output logic [C_S_AXI_DATA_WIDTH-1:0] game_regs [47], // 0x80C to 0x83A
 
     // User ports ends
 
@@ -487,6 +487,18 @@ begin
         12'h82C: reg_data_out = game_regs[32];
         12'h82D: reg_data_out = game_regs[33];
         12'h82E: reg_data_out = game_regs[34];
+        12'h82F: reg_data_out = game_regs[35];
+        12'h830: reg_data_out = game_regs[36];
+        12'h831: reg_data_out = game_regs[37];
+        12'h832: reg_data_out = game_regs[38];
+        12'h833: reg_data_out = game_regs[39];
+        12'h834: reg_data_out = game_regs[40];
+        12'h835: reg_data_out = game_regs[41];
+        12'h836: reg_data_out = game_regs[42];
+        12'h837: reg_data_out = game_regs[43];
+        12'h838: reg_data_out = game_regs[44];
+        12'h839: reg_data_out = game_regs[45];
+        12'h83A: reg_data_out = game_regs[46];
         default: reg_data_out = 32'b0;
       endcase
     end
@@ -572,9 +584,9 @@ end
 // write logic for game registers
 always_ff @(posedge S_AXI_ACLK) begin
   if (S_AXI_ARESETN == 1'b0) begin
-    for (int i = 0; i < 35; i++) game_regs[i] <= 32'b0;
+    for (int i = 0; i < 47; i++) game_regs[i] <= 32'b0;
   end else begin
-    if (slv_reg_wren && (aw_word_addr >= 12'h80C) && (aw_word_addr <= 12'h82E)) begin
+    if (slv_reg_wren && (aw_word_addr >= 12'h80C) && (aw_word_addr <= 12'h83A)) begin
       for (byte_index = 0; byte_index <= 3; byte_index = byte_index + 1) begin
         if (S_AXI_WSTRB[byte_index] == 1) begin
           game_regs[aw_word_addr - 12'h80C][(byte_index*8) +: 8] <= S_AXI_WDATA[(byte_index*8) +: 8];
